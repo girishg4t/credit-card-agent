@@ -27,6 +27,10 @@ LIVEKIT_API_KEY=your_livekit_api_key
 LIVEKIT_API_SECRET=your_livekit_api_secret
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_REALTIME_MODEL=gpt-realtime
+OPENAI_STT_MODEL=gpt-4o-mini-transcribe
+OPENAI_LLM_MODEL=gpt-4.1-mini
+OPENAI_TTS_MODEL=gpt-4o-mini-tts
+OPENAI_VOICE=alloy
 LIVEKIT_SIP_TRUNK_ID=your_livekit_outbound_sip_trunk_id
 ```
 
@@ -92,6 +96,8 @@ npm run dev
 
 Open `http://localhost:5173`, select a customer, then choose one of these actions:
 
+The voice pipeline defaults to separate ASR, text LLM, and TTS models. Turn on `Realtime speech-to-speech` in call setup to use the OpenAI realtime voice model instead.
+
 - `Test in browser`: joins a LiveKit room from your browser so you can talk to the agent as the customer.
 - `Call customer phone`: dials the selected customer's phone number through LiveKit SIP and joins the room for monitoring.
 
@@ -101,7 +107,7 @@ Open `http://localhost:5173`, select a customer, then choose one of these action
 - The frontend loads customer summaries from `GET /api/customers`.
 - `POST /api/session` creates a browser test room for the selected customer.
 - `POST /api/call` creates a room, dispatches the LiveKit agent, and starts an outbound SIP call to the selected customer.
-- The worker joins the same room and uses OpenAI realtime voice through LiveKit Agents.
+- The worker joins the same room and uses either the default OpenAI ASR → LLM → TTS pipeline or the optional realtime speech-to-speech model through LiveKit Agents.
 
 ## Safety Notes
 

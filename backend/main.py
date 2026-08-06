@@ -16,6 +16,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 AGENT_NAME = "credit-card-sales-agent"
 DatasetType = Literal["debt_collection", "credit_card"]
+VoiceMode = Literal["standard", "realtime"]
 DATASET_PATHS: dict[DatasetType, str] = {
     "debt_collection": os.getenv("DEBT_COLLECTION_DATA_PATH", os.getenv("CUSTOMER_DATA_PATH", "debt_collection_100_customers.json")),
     "credit_card": os.getenv("CREDIT_CARD_DATA_PATH", "customers.json"),
@@ -47,6 +48,7 @@ class SessionRequest(BaseModel):
     customer_id: str = Field(..., min_length=1, max_length=80)
     language: str | None = Field(default=None, max_length=80)
     dataset_type: DatasetType = "debt_collection"
+    voice_mode: VoiceMode = "standard"
 
 
 class PhoneCallRequest(SessionRequest):
@@ -61,6 +63,7 @@ class SessionResponse(BaseModel):
     customer: CustomerSummary
     language: str | None = None
     phone_call_started: bool = False
+    voice_mode: VoiceMode = "standard"
 
 
 def require_env(name: str) -> str:
@@ -230,6 +233,7 @@ async def create_livekit_session(
     dial_phone: bool,
     dataset_type: DatasetType,
     language: str | None = None,
+    voice_mode: VoiceMode = "standard",
     wait_until_answered: bool = False,
 ) -> SessionResponse:
     if dial_phone:
@@ -249,6 +253,7 @@ async def create_livekit_session(
         "call_type": "phone" if dial_phone else "browser",
         "prompt_type": dataset_type,
         "language": selected_language,
+        "voice_mode": voice_mode,
     })
 
     token = (
@@ -307,6 +312,7 @@ async def create_livekit_session(
         customer=summary,
         language=selected_language,
         phone_call_started=dial_phone,
+        voice_mode=voice_mode,
     )
 
 
@@ -334,7 +340,13 @@ def list_customers(dataset_type: DatasetType = "debt_collection") -> list[Custom
 @app.post("/api/session", response_model=SessionResponse)
 async def create_session(payload: SessionRequest) -> SessionResponse:
     record = find_customer_record(payload.customer_id, payload.dataset_type)
-    return await create_livekit_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language)
+    return await create_livekit_session(
+        record,
+        dial_phone=False,
+        dataset_type=payload.dataset_type,
+        language=payload.language,
+        voice_mode=payload.voice_mode,
+    )
 
 
 @app.post("/api/call", response_model=SessionResponse)
@@ -345,5 +357,6 @@ async def call_customer(payload: PhoneCallRequest) -> SessionResponse:
         dial_phone=True,
         dataset_type=payload.dataset_type,
         language=payload.language,
+        voice_mode=payload.voice_mode,
         wait_until_answered=payload.wait_until_answered,
     )

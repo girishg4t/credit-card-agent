@@ -197,6 +197,77 @@ button:disabled {
   gap: 14px;
 }
 
+.voice-mode-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border: 1px solid #d8deea;
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: #fbfcff;
+}
+
+.voice-mode-control > div {
+  display: grid;
+  gap: 4px;
+}
+
+.voice-mode-control strong {
+  color: #172033;
+}
+
+.voice-mode-control > div span {
+  color: #667085;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.switch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.switch-track {
+  width: 48px;
+  height: 28px;
+  border-radius: 999px;
+  padding: 3px;
+  background: #cbd5e1;
+  transition: background 160ms ease;
+}
+
+.switch-track span {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(23, 32, 51, 0.3);
+  transition: transform 160ms ease;
+}
+
+.switch input:checked + .switch-track {
+  background: #0f766e;
+}
+
+.switch input:checked + .switch-track span {
+  transform: translateX(20px);
+}
+
+.switch input:focus-visible + .switch-track {
+  outline: 3px solid rgba(221, 143, 34, 0.3);
+  outline-offset: 2px;
+}
+
 .customer-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

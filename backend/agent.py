@@ -13,6 +13,21 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 DEBT_PROMPT_PATH = os.path.join(REPO_ROOT, "debt-collection-voice-agent-prompt.md")
 CREDIT_CARD_PROMPT_PATH = os.path.join(REPO_ROOT, "livekit_reusable_credit_card_llm_system_prompt_template.txt")
 
+LANGUAGE_CODES = {
+    "English": "en",
+    "Hindi": "hi",
+    "Tamil": "ta",
+    "Telugu": "te",
+    "Kannada": "kn",
+    "Malayalam": "ml",
+    "Marathi": "mr",
+    "Gujarati": "gu",
+    "Bengali": "bn",
+    "Punjabi": "pa",
+    "Urdu": "ur",
+    "Konkani": "kok",
+}
+
 
 def read_prompt_template(path: str) -> str:
     with open(path, encoding="utf-8") as file:
@@ -281,15 +296,29 @@ async def entrypoint(ctx: JobContext) -> None:
     summary = customer.get("summary", {})
     prompt_type = dispatch_metadata.get("prompt_type") or customer.get("prompt_type") or summary.get("dataset_type") or "debt_collection"
     language = dispatch_metadata.get("language") or customer.get("language") or summary.get("preferred_language") or "English"
+    voice_mode = dispatch_metadata.get("voice_mode", "standard")
 
     await ctx.connect()
 
-    session = AgentSession(
-        llm=openai.realtime.RealtimeModel(
-            model=os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime"),
-            voice="alloy",
+    if voice_mode == "realtime":
+        session = AgentSession(
+            llm=openai.realtime.RealtimeModel(
+                model=os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime"),
+                voice=os.getenv("OPENAI_VOICE", "alloy"),
+            )
         )
-    )
+    else:
+        session = AgentSession(
+            stt=openai.STT(
+                model=os.getenv("OPENAI_STT_MODEL", "gpt-4o-mini-transcribe"),
+                language=LANGUAGE_CODES.get(language, "en"),
+            ),
+            llm=openai.LLM(model=os.getenv("OPENAI_LLM_MODEL", "gpt-4.1-mini")),
+            tts=openai.TTS(
+                model=os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts"),
+                voice=os.getenv("OPENAI_VOICE", "alloy"),
+            ),
+        )
 
     await session.start(
         room=ctx.room,
