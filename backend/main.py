@@ -91,8 +91,8 @@ class SessionResponse(BaseModel):
     phone_call_started: bool = False
     agora_app_id: str | None = None
     agora_channel: str | None = None
-    agora_uid: str | None = None
-    agora_agent_uid: str | None = None
+    agora_uid: int | str | None = None
+    agora_agent_uid: int | str | None = None
     agora_agent_id: str | None = None
     voice_mode: VoiceMode = "standard"
 
@@ -449,7 +449,7 @@ async def start_agora_agent_session(
         remote_uids=[user_uid],
         name=name,
         idle_timeout=int(os.getenv("AGORA_AGENT_IDLE_TIMEOUT", "60")),
-        enable_string_uid=True,
+        enable_string_uid=False,
         expires_in=int(os.getenv("AGORA_TOKEN_TTL_SECONDS", "3600")),
     )
     agent_id = await session.start()
@@ -476,8 +476,8 @@ async def create_agora_session(
 
     channel_prefix = "agora-debt" if dataset_type == "debt_collection" else "agora-card"
     channel = f"{channel_prefix}-{summary.customer_id.lower()}-{uuid.uuid4().hex[:8]}"
-    user_uid = f"user-{uuid.uuid4().hex[:8]}"
-    agent_uid = f"agent-{uuid.uuid4().hex[:8]}"
+    user_uid = 1_000_000 + uuid.uuid4().int % 8_000_000
+    agent_uid = 9_000_000 + uuid.uuid4().int % 90_000_000
     name = f"card-agent-{uuid.uuid4().hex[:8]}"
 
     customer_context = customer_payload(record, selected_language, dataset_type, prompt_override)
@@ -488,15 +488,15 @@ async def create_agora_session(
         f"I will speak in {selected_language or 'English'}. Is now a good time to talk?"
     )
     expires_at = int(time.time()) + int(os.getenv("AGORA_TOKEN_TTL_SECONDS", "3600"))
-    token = RtcTokenBuilder.buildTokenWithAccount(app_id, app_certificate, channel, user_uid, 1, expires_at)
+    token = RtcTokenBuilder.buildTokenWithUid(app_id, app_certificate, channel, user_uid, 1, expires_at)
 
     try:
         agent_id = await start_agora_agent_session(
             app_id=app_id,
             app_certificate=app_certificate,
             channel=channel,
-            agent_uid=agent_uid,
-            user_uid=user_uid,
+            agent_uid=str(agent_uid),
+            user_uid=str(user_uid),
             instructions=instructions,
             greeting_message=greeting_message,
             name=name,
@@ -506,13 +506,19 @@ async def create_agora_session(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not start Agora ConvoAI agent: {exc}") from exc
+        logger.exception(
+            "Agora ConvoAI start failed provider=agora voice_mode=%s channel=%s",
+            voice_mode,
+            channel,
+        )
+        detail = str(exc).strip() or exc.__class__.__name__
+        raise HTTPException(status_code=502, detail=f"Could not start Agora ConvoAI agent: {detail}") from exc
 
     return SessionResponse(
         provider="agora",
         token=token,
         room_name=channel,
-        participant_name=user_uid,
+        participant_name=str(user_uid),
         customer=summary,
         language=selected_language,
         phone_call_started=False,

@@ -204,8 +204,7 @@ button:disabled {
   gap: 18px;
 }
 
-.setup-header,
-.call-header {
+.setup-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -531,13 +530,71 @@ button:disabled {
 }
 
 .call-page {
-  grid-template-columns: minmax(280px, 720px);
+  grid-template-columns: minmax(0, 860px);
   place-content: center;
 }
 
 .call-card {
   display: grid;
   gap: 24px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.call-card > *,
+.agora-room,
+.lk-room-container {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.call-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  align-items: end;
+  gap: 24px;
+  padding-bottom: 4px;
+}
+
+.call-title {
+  min-width: 0;
+}
+
+.call-title h1 {
+  font-size: clamp(2.5rem, 7vw, 5.3rem);
+  overflow-wrap: anywhere;
+}
+
+.call-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+  min-width: 0;
+  margin: 0;
+}
+
+.call-meta div {
+  min-width: 0;
+  border-top: 1px solid #d8deea;
+  padding-top: 8px;
+}
+
+.call-meta dt {
+  color: #805b18;
+  font-size: 0.7rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.call-meta dd {
+  min-width: 0;
+  margin: 4px 0 0;
+  color: #4b5870;
+  font-size: 0.9rem;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .muted {
@@ -688,6 +745,11 @@ button:disabled {
   .hero {
     align-self: end;
   }
+
+  .call-header {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
 }
 
 @media (max-width: 620px) {
@@ -714,9 +776,12 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
-  .setup-header,
-  .call-header {
+  .setup-header {
     display: grid;
+  }
+
+  .call-meta {
+    grid-template-columns: 1fr;
   }
 
   .debt-list-header {
