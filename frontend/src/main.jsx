@@ -310,8 +310,8 @@ function App() {
   }
 
   return (
-    <main className="page">
-      <section className="hero">
+    <main className={isDebtList ? 'page debt-page' : 'page'}>
+      <section className={isDebtList ? 'hero debt-hero' : 'hero'}>
         <p className="eyebrow">AI voice agent</p>
         <h1>Credit card calls with customer context</h1>
         <p>
@@ -328,7 +328,7 @@ function App() {
           <span className="count-pill">{isLoadingCustomers ? 'Loading...' : `${customers.length} customers`}</span>
         </div>
 
-        <div className="selector-grid top-controls">
+        <div className={isDebtList ? 'selector-grid top-controls debt-control-row' : 'selector-grid top-controls'}>
           <label>
             Agent provider
             <select value={agentProvider} onChange={(event) => setAgentProvider(event.target.value)}>
@@ -346,9 +346,25 @@ function App() {
               ))}
             </select>
           </label>
+
+          {isDebtList && (
+            <label>
+              Language
+              <select
+                disabled={isLoadingCustomers}
+                value={selectedLanguage}
+                onChange={(event) => setSelectedLanguage(event.target.value)}
+              >
+                {languageOptions.map((language) => (
+                  <option key={language} value={language}>{language}</option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
 
-        <div className={isDebtList ? 'selector-grid top-controls debt-top-controls' : 'selector-grid'}>
+        {!isDebtList && (
+        <div className="selector-grid">
           {!isDebtList && (
             <label>
               Customer
@@ -380,6 +396,7 @@ function App() {
             </select>
           </label>
         </div>
+        )}
 
         {isDebtList && (
           <section className="debt-list" aria-label="Debt collection customer list">

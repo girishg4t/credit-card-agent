@@ -35,6 +35,30 @@ textarea {
   max-width: 620px;
 }
 
+.debt-page {
+  grid-template-columns: 1fr;
+  align-content: start;
+}
+
+.debt-page .panel {
+  align-self: start;
+  max-width: none;
+}
+
+.debt-hero {
+  align-self: start;
+  max-width: 980px;
+}
+
+.debt-hero h1 {
+  max-width: 900px;
+  font-size: clamp(2.4rem, 5vw, 4.6rem);
+}
+
+.debt-hero p:not(.eyebrow) {
+  max-width: 760px;
+}
+
 .eyebrow {
   margin: 0 0 12px;
   color: #805b18;
@@ -212,6 +236,10 @@ button:disabled {
   grid-template-columns: minmax(220px, 0.8fr);
 }
 
+.debt-control-row {
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+}
+
 .customer-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -272,7 +300,7 @@ button:disabled {
 
 .debt-table {
   width: 100%;
-  min-width: 760px;
+  min-width: 980px;
   border-collapse: collapse;
 }
 
@@ -591,6 +619,7 @@ button:disabled {
   .call-actions,
   .selector-grid,
   .debt-top-controls,
+  .debt-control-row,
   .customer-summary {
     grid-template-columns: 1fr;
   }
