@@ -142,6 +142,7 @@ function App() {
   const [agentProvider, setAgentProvider] = useState('livekit');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('English');
+  const [useRealtime, setUseRealtime] = useState(false);
   const [lastCallMode, setLastCallMode] = useState('browser');
   const [session, setSession] = useState(null);
   const [pendingCall, setPendingCall] = useState(null);
@@ -280,6 +281,7 @@ function App() {
           dataset_type: datasetType,
           provider: agentProvider,
           prompt_override: promptOverride,
+          voice_mode: useRealtime ? 'realtime' : 'standard',
         }),
       });
 
@@ -305,6 +307,8 @@ function App() {
             <h1>{session.phone_call_started ? 'Calling' : 'Testing'} {session.customer.name}</h1>
             <p className="muted">Room: {session.room_name}</p>
             <p className="muted">Language: {session.language || selectedLanguage}</p>
+            {session.provider === 'agora' && <p className="muted">Agent ID: {session.agora_agent_id || session.agora_agent_uid}</p>}
+            <p className="muted">Voice mode: {session.voice_mode === 'realtime' ? 'Realtime speech-to-speech' : 'ASR / LLM / TTS'}</p>
             {session.provider === 'agora' && <p className="muted">Agent ID: {session.agora_agent_id || session.agora_agent_uid}</p>}
             {session.phone_call_started && <p className="muted">Dialed: {session.customer.phone}</p>}
           </div>
@@ -441,6 +445,22 @@ function App() {
           </label>
         </div>
         )}
+
+        <div className="voice-mode-control">
+          <div>
+            <strong>Realtime speech-to-speech</strong>
+            <span>{useRealtime ? 'On — uses the OpenAI realtime voice model' : 'Off — uses separate ASR, LLM, and TTS models (default)'}</span>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={useRealtime}
+              onChange={(event) => setUseRealtime(event.target.checked)}
+              aria-label="Use realtime speech-to-speech mode"
+            />
+            <span className="switch-track" aria-hidden="true"><span /></span>
+          </label>
+        </div>
 
         {isListPage && (
           <section className="debt-list" aria-label={`${isDebtList ? 'Debt collection' : 'Credit card sales'} customer list`}>

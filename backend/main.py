@@ -26,6 +26,7 @@ logger = logging.getLogger("credit-card-agent")
 AGENT_NAME = "credit-card-sales-agent"
 DatasetType = Literal["debt_collection", "credit_card"]
 AgentProvider = Literal["livekit", "agora"]
+VoiceMode = Literal["standard", "realtime"]
 DATASET_PATHS: dict[DatasetType, str] = {
     "debt_collection": os.getenv("DEBT_COLLECTION_DATA_PATH", os.getenv("CUSTOMER_DATA_PATH", "debt_collection_100_customers.json")),
     "credit_card": os.getenv("CREDIT_CARD_DATA_PATH", "customers.json"),
@@ -60,6 +61,7 @@ class SessionRequest(BaseModel):
     dataset_type: DatasetType = "debt_collection"
     provider: AgentProvider = "livekit"
     prompt_override: str | None = None
+    voice_mode: VoiceMode = "standard"
 
 
 class PromptPreviewRequest(BaseModel):
@@ -90,6 +92,7 @@ class SessionResponse(BaseModel):
     agora_uid: str | None = None
     agora_agent_uid: str | None = None
     agora_agent_id: str | None = None
+    voice_mode: VoiceMode = "standard"
 
 
 def require_env(name: str) -> str:
@@ -264,6 +267,7 @@ async def create_livekit_session(
     dial_phone: bool,
     dataset_type: DatasetType,
     language: str | None = None,
+    voice_mode: VoiceMode = "standard",
     wait_until_answered: bool = False,
     prompt_override: str | None = None,
 ) -> SessionResponse:
@@ -284,6 +288,7 @@ async def create_livekit_session(
         "call_type": "phone" if dial_phone else "browser",
         "prompt_type": dataset_type,
         "language": selected_language,
+        "voice_mode": voice_mode,
     })
 
     token = (
@@ -343,6 +348,7 @@ async def create_livekit_session(
         customer=summary,
         language=selected_language,
         phone_call_started=dial_phone,
+        voice_mode=voice_mode,
     )
 
 
@@ -527,8 +533,22 @@ async def create_session(payload: SessionRequest) -> SessionResponse:
         payload.customer_id,
     )
     if payload.provider == "agora":
-        return await create_agora_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override)
-    return await create_livekit_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override)
+        return await create_agora_session(
+            record,
+            dial_phone=False,
+            dataset_type=payload.dataset_type,
+            language=payload.language,
+            voice_mode=payload.voice_mode,
+            prompt_override=payload.prompt_override,
+        )
+    return await create_livekit_session(
+        record,
+        dial_phone=False,
+        dataset_type=payload.dataset_type,
+        language=payload.language,
+        voice_mode=payload.voice_mode,
+        prompt_override=payload.prompt_override,
+    )
 
 
 @app.post("/api/call", response_model=SessionResponse)
@@ -547,6 +567,7 @@ async def call_customer(payload: PhoneCallRequest) -> SessionResponse:
         dial_phone=True,
         dataset_type=payload.dataset_type,
         language=payload.language,
+        voice_mode=payload.voice_mode,
         wait_until_answered=payload.wait_until_answered,
         prompt_override=payload.prompt_override,
     )
