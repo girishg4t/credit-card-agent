@@ -5,6 +5,7 @@ import re
 from dotenv import load_dotenv
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
 from livekit.plugins import openai
+from openai.types.beta.realtime.session import TurnDetection
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 load_dotenv(dotenv_path=os.path.join(REPO_ROOT, ".env"))
@@ -244,6 +245,26 @@ def agent_instructions(customer: dict) -> str:
     return render_debt_prompt(customer, language)
 
 
+def realtime_turn_detection() -> TurnDetection:
+    turn_detection_type = os.getenv("LIVEKIT_TURN_DETECTION_TYPE", "server_vad")
+    if turn_detection_type == "semantic_vad":
+        return TurnDetection(
+            type="semantic_vad",
+            eagerness=os.getenv("LIVEKIT_SEMANTIC_VAD_EAGERNESS", "medium"),
+            create_response=True,
+            interrupt_response=True,
+        )
+
+    return TurnDetection(
+        type="server_vad",
+        threshold=float(os.getenv("LIVEKIT_SERVER_VAD_THRESHOLD", "0.7")),
+        prefix_padding_ms=int(os.getenv("LIVEKIT_SERVER_VAD_PREFIX_PADDING_MS", "300")),
+        silence_duration_ms=int(os.getenv("LIVEKIT_SERVER_VAD_SILENCE_DURATION_MS", "400")),
+        create_response=True,
+        interrupt_response=True,
+    )
+
+
 async def entrypoint(ctx: JobContext) -> None:
     dispatch_metadata = json.loads(ctx.job.metadata or "{}")
     customer = dispatch_metadata.get("customer", {})
@@ -256,7 +277,8 @@ async def entrypoint(ctx: JobContext) -> None:
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
             model=os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime"),
-            voice="alloy",
+            voice=os.getenv("OPENAI_REALTIME_VOICE", "alloy"),
+            turn_detection=realtime_turn_detection(),
         )
     )
 

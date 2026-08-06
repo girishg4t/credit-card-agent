@@ -403,6 +403,7 @@ async def create_livekit_session(
                     participant_metadata=json.dumps({"customer_id": summary.customer_id}),
                     wait_until_answered=wait_until_answered,
                     play_ringtone=True,
+                    krisp_enabled=os.getenv("LIVEKIT_SIP_KRISP_ENABLED", "true").lower() != "false",
                 )
             )
     except HTTPException:

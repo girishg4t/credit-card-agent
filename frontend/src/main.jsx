@@ -336,7 +336,11 @@ function App() {
               serverUrl={session.livekit_url}
               token={session.token}
               connect={true}
-              audio={true}
+              audio={{
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+              }}
               video={false}
               onDisconnected={() => setSession(null)}
             >

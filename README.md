@@ -29,6 +29,12 @@ LIVEKIT_API_SECRET=your_livekit_api_secret
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_REALTIME_MODEL=gpt-realtime
 OPENAI_REALTIME_VOICE=alloy
+LIVEKIT_TURN_DETECTION_TYPE=server_vad
+LIVEKIT_SERVER_VAD_THRESHOLD=0.7
+LIVEKIT_SERVER_VAD_PREFIX_PADDING_MS=300
+LIVEKIT_SERVER_VAD_SILENCE_DURATION_MS=400
+LIVEKIT_SEMANTIC_VAD_EAGERNESS=medium
+LIVEKIT_SIP_KRISP_ENABLED=true
 GOOGLE_GEMINI_API_KEY=your_google_gemini_api_key
 AGORA_GEMINI_URL=wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent
 AGORA_GEMINI_MODEL=gemini-3.1-flash-live-preview
@@ -39,6 +45,8 @@ LIVEKIT_SIP_TRUNK_ID=your_livekit_outbound_sip_trunk_id
 `LIVEKIT_SIP_TRUNK_ID` is required only for `Call customer phone`. Browser testing works without it.
 
 Agora ConvoAI lets you choose `OpenAI Realtime` or `Gemini Live` in the UI. Gemini Live is selected by default. The Agora docs currently show `gemini-3.1-flash-live-preview`; set `AGORA_GEMINI_MODEL` to a different Gemini Live model ID if your Google/Agora account supports it.
+
+LiveKit browser calls use WebRTC echo cancellation, noise suppression, and automatic gain control. LiveKit SIP dial-out enables Krisp by default with `LIVEKIT_SIP_KRISP_ENABLED=true`. For OpenAI Realtime turn detection, `server_vad` is tuned for noisy phone/browser audio; set `LIVEKIT_TURN_DETECTION_TYPE=semantic_vad` if you prefer semantic endpointing.
 
 The backend loads environment variables from both `.env` at the repo root and `backend/.env`.
 
