@@ -12,6 +12,10 @@ const datasetOptions = [
   { value: 'credit_card', label: 'Credit card sales' },
 ];
 
+function customerCanDial(customer) {
+  return Boolean(customer) && customer.allow_voice_calls && !customer.do_not_call && !customer.contact_restricted && Boolean(customer.phone);
+}
+
 function AgentConnectionStatus() {
   const participants = useParticipants();
   const agentOnline = participants.some((participant) => participant.identity.includes('agent'));
@@ -68,6 +72,7 @@ function App() {
 
   const selectedCustomer = customers.find((customer) => customer.customer_id === selectedCustomerId);
   const canStartCall = !isStarting && !isLoadingCustomers && Boolean(selectedCustomer);
+  const isDebtList = datasetType === 'debt_collection';
 
   useEffect(() => {
     document.title = session ? `Live call: ${session.customer.name}` : 'Credit Card Voice Agent';
@@ -114,14 +119,17 @@ function App() {
     setSelectedLanguage(nextCustomer?.preferred_language || 'English');
   }
 
-  async function startCall(mode, event) {
+  async function startCall(mode, event, customerOverride = selectedCustomer, languageOverride = selectedLanguage) {
     event?.preventDefault();
     setError('');
 
-    if (!selectedCustomer) {
+    if (!customerOverride) {
       setError('Select a customer first.');
       return;
     }
+
+    setSelectedCustomerId(customerOverride.customer_id);
+    setSelectedLanguage(languageOverride || customerOverride.preferred_language || 'English');
 
     setLastCallMode(mode);
     setIsStarting(true);
@@ -131,7 +139,11 @@ function App() {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customer_id: selectedCustomer.customer_id, language: selectedLanguage, dataset_type: datasetType }),
+        body: JSON.stringify({
+          customer_id: customerOverride.customer_id,
+          language: languageOverride || customerOverride.preferred_language || 'English',
+          dataset_type: datasetType,
+        }),
       });
 
       const body = await response.json();
@@ -218,7 +230,7 @@ function App() {
           <label>
             Customer
             <select
-              disabled={isLoadingCustomers || customers.length === 0}
+              disabled={isLoadingCustomers || customers.length === 0 || isDebtList}
               value={selectedCustomerId}
               onChange={(event) => changeCustomer(event.target.value)}
             >
@@ -244,6 +256,65 @@ function App() {
             </select>
           </label>
         </div>
+
+        {isDebtList && (
+          <section className="debt-list" aria-label="Debt collection customer list">
+            <div className="debt-list-header">
+              <div>
+                <p className="eyebrow">Debt queue</p>
+                <h3>Customers ready for agent calls</h3>
+              </div>
+              <span>{isLoadingCustomers ? 'Loading customers...' : `${customers.length} rows`}</span>
+            </div>
+
+            <div className="debt-table-wrap">
+              <table className="debt-table">
+                <thead>
+                  <tr>
+                    <th>Customer</th>
+                    <th>Scenario</th>
+                    <th>Outstanding</th>
+                    <th>DPD</th>
+                    <th>Language</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customers.map((customer) => {
+                    const rowLanguage = customer.preferred_language || selectedLanguage || 'English';
+                    const canDial = customerCanDial(customer);
+                    return (
+                      <tr key={customer.customer_id} className={customer.customer_id === selectedCustomerId ? 'selected-row' : ''}>
+                        <td data-label="Customer">
+                          <strong>{customer.name}</strong>
+                          <span>{customer.customer_id}</span>
+                        </td>
+                        <td data-label="Scenario">{customer.scenario || '-'}</td>
+                        <td data-label="Outstanding">INR {customer.outstanding_amount ?? '-'}</td>
+                        <td data-label="DPD">{customer.days_past_due ?? '-'}</td>
+                        <td data-label="Language">{rowLanguage}</td>
+                        <td data-label="Status">
+                          <span className={canDial ? 'status-pill clear' : 'status-pill blocked'}>{canDial ? 'Callable' : 'Restricted'}</span>
+                        </td>
+                        <td data-label="Actions">
+                          <div className="row-actions">
+                            <button type="button" disabled={isStarting} onClick={(event) => startCall('browser', event, customer, rowLanguage)}>
+                              Browser
+                            </button>
+                            <button type="button" className="call-button" disabled={isStarting || !canDial} onClick={(event) => startCall('phone', event, customer, rowLanguage)}>
+                              Phone
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
 
         {selectedCustomer && (
           <section className="customer-summary">
