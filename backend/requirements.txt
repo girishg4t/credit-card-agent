@@ -4,5 +4,5 @@ python-dotenv==1.1.1
 livekit-api==1.2.0
 livekit-agents[openai]==1.6.8
 pydantic==2.11.7
-agent-server-sdk-python==1.1.0
+agora-agents>=2.3.0,<3.0.0
 agora-token-builder==1.0.0

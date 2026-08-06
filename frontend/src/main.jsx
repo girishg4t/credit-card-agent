@@ -313,8 +313,8 @@ function App() {
   }
 
   return (
-    <main className="page">
-      <section className="hero">
+    <main className={isDebtList ? 'page debt-page' : 'page'}>
+      <section className={isDebtList ? 'hero debt-hero' : 'hero'}>
         <p className="eyebrow">AI voice agent</p>
         <h1>Credit card calls with customer context</h1>
         <p>
@@ -331,7 +331,7 @@ function App() {
           <span className="count-pill">{isLoadingCustomers ? 'Loading...' : `${customers.length} customers`}</span>
         </div>
 
-        <div className="selector-grid top-controls">
+        <div className={isDebtList ? 'selector-grid top-controls debt-control-row' : 'selector-grid top-controls'}>
           <label>
             Agent provider
             <select value={agentProvider} onChange={(event) => setAgentProvider(event.target.value)}>
@@ -349,9 +349,25 @@ function App() {
               ))}
             </select>
           </label>
+
+          {isDebtList && (
+            <label>
+              Language
+              <select
+                disabled={isLoadingCustomers}
+                value={selectedLanguage}
+                onChange={(event) => setSelectedLanguage(event.target.value)}
+              >
+                {languageOptions.map((language) => (
+                  <option key={language} value={language}>{language}</option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
 
-        <div className={isDebtList ? 'selector-grid top-controls debt-top-controls' : 'selector-grid'}>
+        {!isDebtList && (
+        <div className="selector-grid">
           {!isDebtList && (
             <label>
               Customer
@@ -383,17 +399,17 @@ function App() {
             </select>
           </label>
         </div>
+        )}
 
         <div className="voice-mode-control">
           <div>
             <strong>Realtime speech-to-speech</strong>
-            <span>{agentProvider === 'agora' ? 'Agora ConvoAI uses realtime speech-to-speech' : useRealtime ? 'On — uses the OpenAI realtime voice model' : 'Off — uses separate ASR, LLM, and TTS models (default)'}</span>
+            <span>{useRealtime ? `On — ${agentProvider === 'agora' ? 'Agora ConvoAI' : 'LiveKit'} uses the OpenAI realtime voice model` : `Off — ${agentProvider === 'agora' ? 'Agora-managed Deepgram ASR, OpenAI LLM, and MiniMax TTS' : 'OpenAI ASR, LLM, and TTS'} (default)`}</span>
           </div>
           <label className="switch">
             <input
               type="checkbox"
-              checked={agentProvider === 'agora' || useRealtime}
-              disabled={agentProvider === 'agora'}
+              checked={useRealtime}
               onChange={(event) => setUseRealtime(event.target.checked)}
               aria-label="Use realtime speech-to-speech mode"
             />
