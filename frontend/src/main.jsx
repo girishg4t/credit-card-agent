@@ -21,6 +21,10 @@ function customerCanDial(customer) {
   return Boolean(customer) && customer.allow_voice_calls && !customer.do_not_call && !customer.contact_restricted && Boolean(customer.phone);
 }
 
+function providerCallMode(provider) {
+  return provider === 'agora' ? 'browser' : 'phone';
+}
+
 function AgentConnectionStatus() {
   const participants = useParticipants();
   const agentOnline = participants.some((participant) => participant.identity.includes('agent'));
@@ -140,6 +144,7 @@ function App() {
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [lastCallMode, setLastCallMode] = useState('browser');
   const [session, setSession] = useState(null);
+  const [pendingCall, setPendingCall] = useState(null);
   const [error, setError] = useState('');
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
@@ -185,12 +190,38 @@ function App() {
     setIsLoadingCustomers(true);
     setDatasetType(nextDatasetType);
     setSession(null);
+    setPendingCall(null);
   }
 
   function changeCustomer(customerId) {
     const nextCustomer = customers.find((customer) => customer.customer_id === customerId);
     setSelectedCustomerId(customerId);
     setSelectedLanguage(nextCustomer?.preferred_language || 'English');
+  }
+
+  function openDebtCallModal(customer) {
+    const rowLanguage = selectedLanguage || customer.preferred_language || 'English';
+    setError('');
+    setSelectedCustomerId(customer.customer_id);
+    setPendingCall({
+      customer,
+      language: rowLanguage,
+      mode: providerCallMode(agentProvider),
+    });
+  }
+
+  function closeDebtCallModal() {
+    if (!isStarting) {
+      setPendingCall(null);
+    }
+  }
+
+  async function confirmDebtCall(event) {
+    if (!pendingCall) {
+      return;
+    }
+    await startCall(pendingCall.mode, event, pendingCall.customer, pendingCall.language);
+    setPendingCall(null);
   }
 
   async function startCall(mode, event, customerOverride = selectedCustomer, languageOverride = selectedLanguage) {
@@ -297,7 +328,7 @@ function App() {
           <span className="count-pill">{isLoadingCustomers ? 'Loading...' : `${customers.length} customers`}</span>
         </div>
 
-        <div className="selector-grid">
+        <div className="selector-grid top-controls">
           <label>
             Agent provider
             <select value={agentProvider} onChange={(event) => setAgentProvider(event.target.value)}>
@@ -317,22 +348,24 @@ function App() {
           </label>
         </div>
 
-        <div className="selector-grid">
-          <label>
-            Customer
-            <select
-              disabled={isLoadingCustomers || customers.length === 0 || isDebtList}
-              value={selectedCustomerId}
-              onChange={(event) => changeCustomer(event.target.value)}
-            >
-              {!selectedCustomerId && <option value="">Select a customer</option>}
-              {customers.map((customer) => (
-                <option key={customer.customer_id} value={customer.customer_id}>
-                  {customer.customer_id} - {customer.name} - {customer.recommended_card || customer.scenario}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div className={isDebtList ? 'selector-grid top-controls debt-top-controls' : 'selector-grid'}>
+          {!isDebtList && (
+            <label>
+              Customer
+              <select
+                disabled={isLoadingCustomers || customers.length === 0}
+                value={selectedCustomerId}
+                onChange={(event) => changeCustomer(event.target.value)}
+              >
+                {!selectedCustomerId && <option value="">Select a customer</option>}
+                {customers.map((customer) => (
+                  <option key={customer.customer_id} value={customer.customer_id}>
+                    {customer.customer_id} - {customer.name} - {customer.recommended_card || customer.scenario}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label>
             Language
@@ -355,7 +388,7 @@ function App() {
                 <p className="eyebrow">Debt queue</p>
                 <h3>Customers ready for agent calls</h3>
               </div>
-              <span>{isLoadingCustomers ? 'Loading customers...' : `${customers.length} rows`}</span>
+              <span>{isLoadingCustomers ? 'Loading customers...' : `${customers.length} customers`}</span>
             </div>
 
             <div className="debt-table-wrap">
@@ -373,8 +406,9 @@ function App() {
                 </thead>
                 <tbody>
                   {customers.map((customer) => {
-                    const rowLanguage = customer.preferred_language || selectedLanguage || 'English';
+                    const rowLanguage = selectedLanguage || customer.preferred_language || 'English';
                     const canDial = customerCanDial(customer);
+                    const canStartProviderCall = agentProvider === 'agora' || canDial;
                     return (
                       <tr key={customer.customer_id} className={customer.customer_id === selectedCustomerId ? 'selected-row' : ''}>
                         <td data-label="Customer">
@@ -390,11 +424,8 @@ function App() {
                         </td>
                         <td data-label="Actions">
                           <div className="row-actions">
-                            <button type="button" disabled={isStarting} onClick={(event) => startCall('browser', event, customer, rowLanguage)}>
-                              Browser
-                            </button>
-                            <button type="button" className="call-button" disabled={isStarting || !canDial || agentProvider === 'agora'} onClick={(event) => startCall('phone', event, customer, rowLanguage)}>
-                              Phone
+                            <button type="button" className="call-button" disabled={isStarting || !canStartProviderCall} onClick={() => openDebtCallModal(customer)}>
+                              Call customer
                             </button>
                           </div>
                         </td>
@@ -407,7 +438,7 @@ function App() {
           </section>
         )}
 
-        {selectedCustomer && (
+        {!isDebtList && selectedCustomer && (
           <section className="customer-summary">
             <div><strong>Phone</strong><span>{selectedCustomer.phone || 'Missing'}</span></div>
             <div><strong>City</strong><span>{selectedCustomer.city || 'Unknown'}</span></div>
@@ -425,21 +456,65 @@ function App() {
           </section>
         )}
 
-        {selectedCustomer && (selectedCustomer.do_not_call || selectedCustomer.contact_restricted || !selectedCustomer.allow_voice_calls) && (
+        {!isDebtList && selectedCustomer && (selectedCustomer.do_not_call || selectedCustomer.contact_restricted || !selectedCustomer.allow_voice_calls) && (
           <p className="warning">This customer is restricted for voice calls. Phone dial-out will be blocked by the backend.</p>
         )}
 
         {error && <p className="error">{error}</p>}
 
-        <div className="actions">
-          <button type="button" disabled={!canStartCall} onClick={(event) => startCall('browser', event)}>
-            {isStarting ? 'Starting...' : 'Test in browser'}
-          </button>
-          <button type="button" className="call-button" disabled={!canStartCall || agentProvider === 'agora'} onClick={(event) => startCall('phone', event)}>
-            {isStarting ? 'Dialing...' : 'Make phone call'}
-          </button>
-        </div>
+        {!isDebtList && (
+          <div className="actions">
+            <button type="button" disabled={!canStartCall} onClick={(event) => startCall('browser', event)}>
+              {isStarting ? 'Starting...' : 'Test in browser'}
+            </button>
+            <button type="button" className="call-button" disabled={!canStartCall || agentProvider === 'agora'} onClick={(event) => startCall('phone', event)}>
+              {isStarting ? 'Dialing...' : 'Make phone call'}
+            </button>
+          </div>
+        )}
       </form>
+
+      {pendingCall && (
+        <div className="modal-backdrop" role="presentation" onClick={closeDebtCallModal}>
+          <section className="call-modal" role="dialog" aria-modal="true" aria-labelledby="call-modal-title" onClick={(event) => event.stopPropagation()}>
+            <div className="call-modal-header">
+              <div>
+                <p className="eyebrow">Confirm call</p>
+                <h2 id="call-modal-title">{pendingCall.customer.name}</h2>
+              </div>
+              <button type="button" className="icon-button" onClick={closeDebtCallModal} aria-label="Close call details">x</button>
+            </div>
+
+            <section className="customer-summary modal-summary">
+              <div><strong>Customer ID</strong><span>{pendingCall.customer.customer_id}</span></div>
+              <div><strong>Phone</strong><span>{pendingCall.customer.phone || 'Missing'}</span></div>
+              <div><strong>Provider</strong><span>{agentProvider === 'agora' ? 'Agora ConvoAI' : 'LiveKit'}</span></div>
+              <div><strong>Call mode</strong><span>{pendingCall.mode === 'phone' ? 'Phone call' : 'Browser conversation'}</span></div>
+              <div><strong>Language</strong><span>{pendingCall.language}</span></div>
+              <div><strong>Scenario</strong><span>{pendingCall.customer.scenario || '-'}</span></div>
+              <div><strong>Outstanding</strong><span>INR {pendingCall.customer.outstanding_amount ?? '-'}</span></div>
+              <div><strong>Minimum due</strong><span>INR {pendingCall.customer.minimum_due ?? '-'}</span></div>
+              <div><strong>DPD</strong><span>{pendingCall.customer.days_past_due ?? '-'}</span></div>
+              <div><strong>Status</strong><span>{customerCanDial(pendingCall.customer) ? 'Callable' : 'Restricted for phone dial-out'}</span></div>
+            </section>
+
+            {agentProvider === 'agora' && (
+              <p className="call-hint">Agora ConvoAI starts a browser audio session. Use LiveKit if you need a real phone dial-out.</p>
+            )}
+
+            {agentProvider === 'livekit' && !customerCanDial(pendingCall.customer) && (
+              <p className="warning">This customer is restricted for phone dial-out. Choose Agora for a browser test session or select another customer.</p>
+            )}
+
+            <div className="actions call-modal-actions">
+              <button type="button" className="light-button" onClick={closeDebtCallModal}>Cancel</button>
+              <button type="button" className="call-button" disabled={isStarting || (agentProvider === 'livekit' && !customerCanDial(pendingCall.customer))} onClick={confirmDebtCall}>
+                {isStarting ? 'Starting...' : pendingCall.mode === 'phone' ? 'Call customer' : 'Start browser call'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

@@ -204,6 +204,14 @@ button:disabled {
   gap: 14px;
 }
 
+.top-controls {
+  align-items: end;
+}
+
+.debt-top-controls {
+  grid-template-columns: minmax(220px, 0.8fr);
+}
+
 .customer-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -326,9 +334,9 @@ button:disabled {
 
 .row-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(150px, 1fr);
   gap: 8px;
-  min-width: 164px;
+  min-width: 150px;
 }
 
 .row-actions button {
@@ -349,6 +357,59 @@ button:disabled {
   color: #92400e;
   background: #fffbeb;
   font-weight: 700;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.54);
+}
+
+.call-modal {
+  width: min(760px, 100%);
+  max-height: min(86vh, 820px);
+  overflow: auto;
+  display: grid;
+  gap: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 28px;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 30px 120px rgba(15, 23, 42, 0.34);
+}
+
+.call-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.icon-button {
+  width: 42px;
+  height: 42px;
+  margin-top: 0;
+  border-radius: 999px;
+  padding: 0;
+  color: #172033;
+  background: #e8edf5;
+  font-size: 1.1rem;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: #dbe3ee;
+}
+
+.modal-summary {
+  margin-top: 0;
+}
+
+.call-modal-actions {
+  margin-top: 4px;
 }
 
 .call-page {
@@ -529,6 +590,7 @@ button:disabled {
   .actions,
   .call-actions,
   .selector-grid,
+  .debt-top-controls,
   .customer-summary {
     grid-template-columns: 1fr;
   }
@@ -577,7 +639,7 @@ button:disabled {
 
   .debt-table td {
     display: grid;
-    grid-template-columns: 110px 1fr;
+    grid-template-columns: 112px 1fr;
     gap: 10px;
     padding: 9px 8px;
   }
@@ -593,5 +655,14 @@ button:disabled {
 
   .row-actions {
     min-width: 0;
+  }
+
+  .call-modal {
+    padding: 18px;
+    border-radius: 24px;
+  }
+
+  .call-modal-header {
+    align-items: flex-start;
   }
 }
