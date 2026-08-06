@@ -145,6 +145,8 @@ function App() {
   const [lastCallMode, setLastCallMode] = useState('browser');
   const [session, setSession] = useState(null);
   const [pendingCall, setPendingCall] = useState(null);
+  const [promptDraft, setPromptDraft] = useState('');
+  const [isLoadingPrompt, setIsLoadingPrompt] = useState(false);
   const [error, setError] = useState('');
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
@@ -199,20 +201,44 @@ function App() {
     setSelectedLanguage(nextCustomer?.preferred_language || 'English');
   }
 
-  function openDebtCallModal(customer) {
+  async function openDebtCallModal(customer) {
     const rowLanguage = selectedLanguage || customer.preferred_language || 'English';
     setError('');
     setSelectedCustomerId(customer.customer_id);
+    setPromptDraft('');
+    setIsLoadingPrompt(true);
     setPendingCall({
       customer,
       language: rowLanguage,
       mode: providerCallMode(agentProvider),
     });
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/prompt-preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: customer.customer_id,
+          language: rowLanguage,
+          dataset_type: datasetType,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(body.detail || 'Could not load prompt preview.');
+      }
+      setPromptDraft(body.prompt || '');
+    } catch (caught) {
+      setError(caught.message);
+    } finally {
+      setIsLoadingPrompt(false);
+    }
   }
 
   function closeDebtCallModal() {
     if (!isStarting) {
       setPendingCall(null);
+      setPromptDraft('');
     }
   }
 
@@ -220,11 +246,12 @@ function App() {
     if (!pendingCall) {
       return;
     }
-    await startCall(pendingCall.mode, event, pendingCall.customer, pendingCall.language);
+    await startCall(pendingCall.mode, event, pendingCall.customer, pendingCall.language, promptDraft);
     setPendingCall(null);
+    setPromptDraft('');
   }
 
-  async function startCall(mode, event, customerOverride = selectedCustomer, languageOverride = selectedLanguage) {
+  async function startCall(mode, event, customerOverride = selectedCustomer, languageOverride = selectedLanguage, promptOverride = null) {
     event?.preventDefault();
     setError('');
 
@@ -249,6 +276,7 @@ function App() {
           language: languageOverride || customerOverride.preferred_language || 'English',
           dataset_type: datasetType,
           provider: agentProvider,
+          prompt_override: promptOverride,
         }),
       });
 
@@ -277,6 +305,19 @@ function App() {
             {session.provider === 'agora' && <p className="muted">Agent ID: {session.agora_agent_id || session.agora_agent_uid}</p>}
             {session.phone_call_started && <p className="muted">Dialed: {session.customer.phone}</p>}
           </div>
+
+          <section className="customer-summary live-customer-summary" aria-label="Customer information for this call">
+            <div><strong>Customer ID</strong><span>{session.customer.customer_id}</span></div>
+            <div><strong>Name</strong><span>{session.customer.name}</span></div>
+            <div><strong>DOB</strong><span>{session.customer.date_of_birth || 'Not available'}</span></div>
+            <div><strong>Phone</strong><span>{session.customer.phone || 'Missing'}</span></div>
+            <div><strong>Provider</strong><span>{session.provider === 'agora' ? 'Agora ConvoAI' : 'LiveKit'}</span></div>
+            <div><strong>Scenario</strong><span>{session.customer.scenario || '-'}</span></div>
+            {session.customer.dataset_type === 'debt_collection' && <div><strong>Outstanding</strong><span>INR {session.customer.outstanding_amount ?? '-'}</span></div>}
+            {session.customer.dataset_type === 'debt_collection' && <div><strong>Minimum due</strong><span>INR {session.customer.minimum_due ?? '-'}</span></div>}
+            {session.customer.dataset_type === 'debt_collection' && <div><strong>DPD</strong><span>{session.customer.days_past_due ?? '-'}</span></div>}
+            {session.customer.dataset_type === 'credit_card' && <div><strong>Recommended card</strong><span>{session.customer.recommended_card || '-'}</span></div>}
+          </section>
 
           {session.provider === 'agora' ? (
             <AgoraCallRoom session={session} />
@@ -518,9 +559,19 @@ function App() {
               <p className="call-hint">Agora ConvoAI starts a browser audio session. Use LiveKit if you need a real phone dial-out.</p>
             )}
 
+            <label className="prompt-editor">
+              Agent prompt with dynamic customer variables
+              <textarea
+                value={isLoadingPrompt ? 'Loading generated prompt...' : promptDraft}
+                disabled={isLoadingPrompt || isStarting}
+                onChange={(event) => setPromptDraft(event.target.value)}
+                rows={12}
+              />
+            </label>
+
             <div className="actions call-modal-actions">
               <button type="button" className="light-button" onClick={closeDebtCallModal}>Cancel</button>
-              <button type="button" className="call-button" disabled={isStarting} onClick={confirmDebtCall}>
+              <button type="button" className="call-button" disabled={isStarting || isLoadingPrompt || !promptDraft.trim()} onClick={confirmDebtCall}>
                 {isStarting ? 'Starting...' : 'Start call'}
               </button>
             </div>

@@ -268,6 +268,10 @@ button:disabled {
   font-weight: 800;
 }
 
+.live-customer-summary {
+  margin-top: 0;
+}
+
 .debt-list {
   display: grid;
   gap: 14px;
@@ -438,6 +442,21 @@ button:disabled {
 
 .call-modal-actions {
   margin-top: 4px;
+}
+
+.prompt-editor {
+  gap: 10px;
+}
+
+.prompt-editor textarea {
+  min-height: 260px;
+  resize: vertical;
+  border-radius: 18px;
+  color: #172033;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
 }
 
 .call-page {
