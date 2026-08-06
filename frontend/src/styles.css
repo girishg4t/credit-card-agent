@@ -252,14 +252,37 @@ button:disabled {
   color: #667085;
 }
 
-.call-status {
+.agent-status {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   border-radius: 18px;
   padding: 16px;
   background: #f7f9fc;
-  font-weight: 800;
+}
+
+.agent-status div {
+  display: grid;
+  gap: 4px;
+}
+
+.agent-status strong {
+  color: #172033;
+  font-size: 1rem;
+}
+
+.agent-status span:not(.dot) {
+  color: #667085;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.agent-status.loading {
+  background: #fff7ed;
+}
+
+.agent-status.ready {
+  background: #ecfdf5;
 }
 
 .call-hint {
@@ -272,15 +295,96 @@ button:disabled {
   line-height: 1.5;
 }
 
+.transcript-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 20px;
+  padding: 16px;
+  background: #ffffff;
+}
+
+.transcript-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.transcript-header strong {
+  color: #172033;
+}
+
+.transcript-header span,
+.transcript-empty {
+  color: #667085;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.transcript-feed {
+  display: grid;
+  gap: 10px;
+  max-height: 300px;
+  overflow: auto;
+}
+
+.transcript-line {
+  display: grid;
+  gap: 6px;
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: #f8fafc;
+}
+
+.transcript-line.agent {
+  background: #eef6ff;
+}
+
+.transcript-line.customer {
+  background: #f7f9fc;
+}
+
+.transcript-line span {
+  color: #475467;
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.transcript-line p,
+.transcript-empty {
+  margin: 0;
+  line-height: 1.5;
+}
+
 .dot {
+  flex: 0 0 auto;
   width: 11px;
   height: 11px;
   border-radius: 999px;
   background: #d97706;
+  margin-top: 5px;
+}
+
+.agent-status.loading .dot {
+  width: 16px;
+  height: 16px;
+  border: 3px solid #fed7aa;
+  border-top-color: #d97706;
+  background: transparent;
+  animation: spin 0.8s linear infinite;
 }
 
 .dot.online {
   background: #16a34a;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 900px) {

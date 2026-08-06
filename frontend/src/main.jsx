@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { LiveKitRoom, RoomAudioRenderer, ControlBar, useParticipants } from '@livekit/components-react';
+import { LiveKitRoom, RoomAudioRenderer, ControlBar, useParticipants, useTranscriptions } from '@livekit/components-react';
 import '@livekit/components-styles';
 import './styles.css';
 
@@ -12,15 +12,46 @@ const datasetOptions = [
   { value: 'credit_card', label: 'Credit card sales' },
 ];
 
-function ParticipantsBadge() {
+function AgentConnectionStatus() {
   const participants = useParticipants();
   const agentOnline = participants.some((participant) => participant.identity.includes('agent'));
 
   return (
-    <div className="call-status">
+    <div className={agentOnline ? 'agent-status ready' : 'agent-status loading'}>
       <span className={agentOnline ? 'dot online' : 'dot'} />
-      {agentOnline ? 'Agent connected' : 'Waiting for agent'}
+      <div>
+        <strong>{agentOnline ? 'Agent ready' : 'Connecting AI agent...'}</strong>
+        <span>{agentOnline ? 'You can start talking now.' : 'Please wait. Start speaking once the agent is ready.'}</span>
+      </div>
     </div>
+  );
+}
+
+function TranscriptPanel() {
+  const transcriptions = useTranscriptions();
+
+  return (
+    <section className="transcript-panel" aria-live="polite">
+      <div className="transcript-header">
+        <strong>Live transcript</strong>
+        <span>{transcriptions.length ? `${transcriptions.length} updates` : 'Waiting for speech'}</span>
+      </div>
+      <div className="transcript-feed">
+        {transcriptions.length === 0 && (
+          <p className="transcript-empty">Transcript will appear here once the agent or customer speaks.</p>
+        )}
+        {transcriptions.map((entry) => {
+          const identity = entry.participantInfo?.identity || '';
+          const isAgent = identity.toLowerCase().includes('agent');
+          return (
+            <article className={isAgent ? 'transcript-line agent' : 'transcript-line customer'} key={entry.streamInfo?.id || `${identity}-${entry.text}`}>
+              <span>{isAgent ? 'Agent' : 'Customer'}</span>
+              <p>{entry.text}</p>
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -137,8 +168,9 @@ function App() {
             onDisconnected={() => setSession(null)}
           >
             <RoomAudioRenderer />
-            <ParticipantsBadge />
-            <p className="call-hint">Allow microphone access. The agent will greet you when it connects, then you can speak normally.</p>
+            <AgentConnectionStatus />
+            <TranscriptPanel />
+            <p className="call-hint">Allow microphone access. The agent will greet you when it is ready, then you can speak normally.</p>
             <ControlBar variation="minimal" controls={{ camera: false, screenShare: false }} />
           </LiveKitRoom>
 
