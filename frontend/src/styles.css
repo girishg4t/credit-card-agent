@@ -266,6 +266,21 @@ button:disabled {
   font-weight: 850;
 }
 
+.debt-list-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-prompt-button {
+  width: auto;
+  margin-top: 0;
+  border-radius: 12px;
+  padding: 9px 13px;
+  font-size: 0.82rem;
+}
+
 .debt-table-wrap {
   overflow-x: auto;
 }
@@ -410,6 +425,94 @@ button:disabled {
 
 .call-modal-actions {
   margin-top: 4px;
+}
+
+.prompt-modal {
+  width: min(920px, 100%);
+}
+
+.prompt-editor {
+  display: grid;
+  gap: 18px;
+}
+
+.prompt-editor-persona {
+  max-width: 420px;
+}
+
+.prompt-editor-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.prompt-editor-field {
+  align-content: start;
+}
+
+.prompt-editor-field textarea {
+  min-height: 94px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.generated-prompt {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d9e2ec;
+  border-radius: 18px;
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.generated-prompt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.generated-prompt-header h3,
+.generated-prompt-header p,
+.generated-prompt > p {
+  margin: 0;
+}
+
+.generated-prompt-header .light-button {
+  width: auto;
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+.generated-prompt textarea {
+  min-height: 360px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  background: #ffffff;
+}
+
+.prompt-editor-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-radius: 16px;
+  padding: 12px 14px;
+  color: #9b2c2c;
+  background: #fff1f2;
+  font-weight: 700;
+}
+
+.prompt-editor-error .light-button {
+  width: auto;
+  margin-top: 0;
+  padding: 9px 13px;
+}
+
+.prompt-editor-actions button {
+  margin-top: 0;
 }
 
 .call-page {
@@ -664,5 +767,9 @@ button:disabled {
 
   .call-modal-header {
     align-items: flex-start;
+  }
+
+  .prompt-editor-fields {
+    grid-template-columns: 1fr;
   }
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { LiveKitRoom, RoomAudioRenderer, ControlBar, useParticipants, useTranscriptions } from '@livekit/components-react';
 import AgoraRTC from 'agora-rtc-sdk-ng';
+import { AgentPromptEditor } from './AgentPromptEditor';
 import '@livekit/components-styles';
 import './styles.css';
 
@@ -145,6 +146,7 @@ function App() {
   const [lastCallMode, setLastCallMode] = useState('browser');
   const [session, setSession] = useState(null);
   const [pendingCall, setPendingCall] = useState(null);
+  const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false);
   const [error, setError] = useState('');
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
@@ -191,6 +193,7 @@ function App() {
     setDatasetType(nextDatasetType);
     setSession(null);
     setPendingCall(null);
+    setIsPromptEditorOpen(false);
   }
 
   function changeCustomer(customerId) {
@@ -388,7 +391,10 @@ function App() {
                 <p className="eyebrow">Debt queue</p>
                 <h3>Customers ready for agent calls</h3>
               </div>
-              <span>{isLoadingCustomers ? 'Loading customers...' : `${customers.length} customers`}</span>
+              <div className="debt-list-header-actions">
+                <span>{isLoadingCustomers ? 'Loading customers...' : `${customers.length} customers`}</span>
+                <button type="button" className="agent-prompt-button" onClick={() => setIsPromptEditorOpen(true)}>Agent Prompt</button>
+              </div>
             </div>
 
             <div className="debt-table-wrap">
@@ -514,6 +520,10 @@ function App() {
             </div>
           </section>
         </div>
+      )}
+
+      {isPromptEditorOpen && (
+        <AgentPromptEditor apiBaseUrl={API_BASE_URL} onClose={() => setIsPromptEditorOpen(false)} />
       )}
     </main>
   );

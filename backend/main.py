@@ -15,6 +15,12 @@ from livekit import api
 from pydantic import BaseModel, Field
 
 from backend.agent import agent_instructions
+from backend.prompt_editor import (
+    PromptConflictError,
+    generate_persona_system_prompt,
+    read_persona_prompts,
+    update_persona_prompt,
+)
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 load_dotenv(dotenv_path=os.path.join(REPO_ROOT, ".env"))
@@ -60,6 +66,15 @@ class SessionRequest(BaseModel):
 
 class PhoneCallRequest(SessionRequest):
     wait_until_answered: bool = False
+
+
+class PersonaPromptUpdate(BaseModel):
+    expected_revision: str = Field(..., min_length=1, max_length=128)
+    content: str = Field(..., min_length=1, max_length=20000)
+
+
+class PersonaPromptGenerate(BaseModel):
+    content: str = Field(..., min_length=1, max_length=20000)
 
 
 class SessionResponse(BaseModel):
@@ -487,6 +502,40 @@ def health() -> dict[str, str]:
 @app.get("/api/customers", response_model=list[CustomerSummary])
 def list_customers(dataset_type: DatasetType = "debt_collection") -> list[CustomerSummary]:
     return [summarize_customer(record, dataset_type) for record in all_customer_records(dataset_type)]
+
+
+@app.get("/api/prompts/debt-collection/personas")
+def get_debt_collection_personas() -> dict:
+    try:
+        return read_persona_prompts()
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=f"Could not read the debt collection prompt: {exc}") from exc
+
+
+@app.put("/api/prompts/debt-collection/personas/{persona_key}")
+def put_debt_collection_persona(persona_key: str, payload: PersonaPromptUpdate) -> dict:
+    try:
+        return update_persona_prompt(persona_key, payload.content, payload.expected_revision)
+    except PromptConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown persona: {persona_key}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not save the debt collection prompt: {exc}") from exc
+
+
+@app.post("/api/prompts/debt-collection/personas/{persona_key}/generate")
+def generate_debt_collection_persona(persona_key: str, payload: PersonaPromptGenerate) -> dict[str, str]:
+    try:
+        return generate_persona_system_prompt(persona_key, payload.content)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown persona: {persona_key}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not generate the debt collection prompt: {exc}") from exc
 
 
 @app.post("/api/session", response_model=SessionResponse)
