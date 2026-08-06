@@ -31,6 +31,13 @@ OPENAI_STT_MODEL=gpt-4o-mini-transcribe
 OPENAI_LLM_MODEL=gpt-4.1-mini
 OPENAI_TTS_MODEL=gpt-4o-mini-tts
 OPENAI_VOICE=alloy
+AGORA_APP_ID=your_agora_app_id
+AGORA_APP_CERTIFICATE=your_agora_app_certificate
+AGORA_AREA=AP
+AGORA_STT_MODEL=nova-3
+AGORA_LLM_MODEL=gpt-4o-mini
+AGORA_TTS_MODEL=speech_2_6_turbo
+AGORA_TTS_VOICE_ID=English_captivating_female1
 LIVEKIT_SIP_TRUNK_ID=your_livekit_outbound_sip_trunk_id
 ```
 
@@ -96,7 +103,7 @@ npm run dev
 
 Open `http://localhost:5173`, select a customer, then choose one of these actions:
 
-The voice pipeline defaults to separate ASR, text LLM, and TTS models. Turn on `Realtime speech-to-speech` in call setup to use the OpenAI realtime voice model instead.
+Both providers default to separate ASR, text LLM, and TTS models. LiveKit uses OpenAI ASR/LLM/TTS; Agora uses its managed Deepgram ASR, OpenAI LLM, and MiniMax TTS chain. Turn on `Realtime speech-to-speech` to use the OpenAI realtime voice model through the selected provider instead.
 
 - `Test in browser`: joins a LiveKit room from your browser so you can talk to the agent as the customer.
 - `Call customer phone`: dials the selected customer's phone number through LiveKit SIP and joins the room for monitoring.
@@ -107,7 +114,8 @@ The voice pipeline defaults to separate ASR, text LLM, and TTS models. Turn on `
 - The frontend loads customer summaries from `GET /api/customers`.
 - `POST /api/session` creates a browser test room for the selected customer.
 - `POST /api/call` creates a room, dispatches the LiveKit agent, and starts an outbound SIP call to the selected customer.
-- The worker joins the same room and uses either the default OpenAI ASR → LLM → TTS pipeline or the optional realtime speech-to-speech model through LiveKit Agents.
+- LiveKit dispatches a worker with either the default OpenAI ASR → LLM → TTS pipeline or the optional realtime speech-to-speech model.
+- Agora starts a ConvoAI session with either the default managed Deepgram ASR → OpenAI LLM → MiniMax TTS pipeline or the optional OpenAI realtime model.
 
 ## Safety Notes
 

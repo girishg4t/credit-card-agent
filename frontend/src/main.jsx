@@ -449,7 +449,7 @@ function App() {
         <div className="voice-mode-control">
           <div>
             <strong>Realtime speech-to-speech</strong>
-            <span>{useRealtime ? 'On — uses the OpenAI realtime voice model' : 'Off — uses separate ASR, LLM, and TTS models (default)'}</span>
+            <span>{useRealtime ? `On — ${agentProvider === 'agora' ? 'Agora ConvoAI' : 'LiveKit'} uses the OpenAI realtime voice model` : `Off — ${agentProvider === 'agora' ? 'Agora-managed Deepgram ASR, OpenAI LLM, and MiniMax TTS' : 'OpenAI ASR, LLM, and TTS'} (default)`}</span>
           </div>
           <label className="switch">
             <input
