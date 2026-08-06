@@ -306,6 +306,19 @@ function App() {
             {session.phone_call_started && <p className="muted">Dialed: {session.customer.phone}</p>}
           </div>
 
+          <section className="customer-summary live-customer-summary" aria-label="Customer information for this call">
+            <div><strong>Customer ID</strong><span>{session.customer.customer_id}</span></div>
+            <div><strong>Name</strong><span>{session.customer.name}</span></div>
+            <div><strong>DOB</strong><span>{session.customer.date_of_birth || 'Not available'}</span></div>
+            <div><strong>Phone</strong><span>{session.customer.phone || 'Missing'}</span></div>
+            <div><strong>Provider</strong><span>{session.provider === 'agora' ? 'Agora ConvoAI' : 'LiveKit'}</span></div>
+            <div><strong>Scenario</strong><span>{session.customer.scenario || '-'}</span></div>
+            {session.customer.dataset_type === 'debt_collection' && <div><strong>Outstanding</strong><span>INR {session.customer.outstanding_amount ?? '-'}</span></div>}
+            {session.customer.dataset_type === 'debt_collection' && <div><strong>Minimum due</strong><span>INR {session.customer.minimum_due ?? '-'}</span></div>}
+            {session.customer.dataset_type === 'debt_collection' && <div><strong>DPD</strong><span>{session.customer.days_past_due ?? '-'}</span></div>}
+            {session.customer.dataset_type === 'credit_card' && <div><strong>Recommended card</strong><span>{session.customer.recommended_card || '-'}</span></div>}
+          </section>
+
           {session.provider === 'agora' ? (
             <AgoraCallRoom session={session} />
           ) : (

@@ -36,6 +36,7 @@ class CustomerSummary(BaseModel):
     dataset_type: DatasetType = "debt_collection"
     customer_id: str
     name: str
+    date_of_birth: str | None = None
     phone: str | None = None
     city: str | None = None
     preferred_language: str | None = None
@@ -141,6 +142,7 @@ def summarize_customer(record: dict[str, Any], dataset_type: DatasetType = "debt
             dataset_type=dataset_type,
             customer_id=record.get("customerId") or customer.get("customerId", ""),
             name=customer.get("fullName", "Unknown Customer"),
+            date_of_birth=customer.get("dob"),
             phone=contact.get("phone"),
             city=customer.get("city"),
             preferred_language=contact.get("preferredCallLanguage") or customer.get("preferredLanguage"),
@@ -165,6 +167,7 @@ def summarize_customer(record: dict[str, Any], dataset_type: DatasetType = "debt
         dataset_type=dataset_type,
         customer_id=customer.get("customerId", ""),
         name=customer.get("fullName", "Unknown Customer"),
+        date_of_birth=customer.get("dateOfBirth"),
         phone=customer.get("phone"),
         city=customer.get("city"),
         preferred_language=customer.get("preferredLanguage"),
