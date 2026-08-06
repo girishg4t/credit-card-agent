@@ -148,6 +148,7 @@ function App() {
   const [pendingCall, setPendingCall] = useState(null);
   const [promptDraft, setPromptDraft] = useState('');
   const [isLoadingPrompt, setIsLoadingPrompt] = useState(false);
+  const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false);
   const [error, setError] = useState('');
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(true);
   const [isStarting, setIsStarting] = useState(false);

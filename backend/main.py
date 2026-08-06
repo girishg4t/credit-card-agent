@@ -532,6 +532,40 @@ def prompt_preview(payload: PromptPreviewRequest) -> PromptPreviewResponse:
     return PromptPreviewResponse(prompt=prompt)
 
 
+@app.get("/api/prompts/debt-collection/personas")
+def get_debt_collection_personas() -> dict:
+    try:
+        return read_persona_prompts()
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=f"Could not read the debt collection prompt: {exc}") from exc
+
+
+@app.put("/api/prompts/debt-collection/personas/{persona_key}")
+def put_debt_collection_persona(persona_key: str, payload: PersonaPromptUpdate) -> dict:
+    try:
+        return update_persona_prompt(persona_key, payload.content, payload.expected_revision)
+    except PromptConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown persona: {persona_key}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not save the debt collection prompt: {exc}") from exc
+
+
+@app.post("/api/prompts/debt-collection/personas/{persona_key}/generate")
+def generate_debt_collection_persona(persona_key: str, payload: PersonaPromptGenerate) -> dict[str, str]:
+    try:
+        return generate_persona_system_prompt(persona_key, payload.content)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown persona: {persona_key}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not generate the debt collection prompt: {exc}") from exc
+
+
 @app.post("/api/session", response_model=SessionResponse)
 async def create_session(payload: SessionRequest) -> SessionResponse:
     record = find_customer_record(payload.customer_id, payload.dataset_type)
