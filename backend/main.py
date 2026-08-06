@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -15,10 +15,15 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 
 AGENT_NAME = "credit-card-sales-agent"
-DATASET_PATH = os.getenv("CUSTOMER_DATA_PATH", "debt_collection_100_customers.json")
+DatasetType = Literal["debt_collection", "credit_card"]
+DATASET_PATHS: dict[DatasetType, str] = {
+    "debt_collection": os.getenv("DEBT_COLLECTION_DATA_PATH", os.getenv("CUSTOMER_DATA_PATH", "debt_collection_100_customers.json")),
+    "credit_card": os.getenv("CREDIT_CARD_DATA_PATH", "customers.json"),
+}
 
 
 class CustomerSummary(BaseModel):
+    dataset_type: DatasetType = "debt_collection"
     customer_id: str
     name: str
     phone: str | None = None
@@ -29,6 +34,10 @@ class CustomerSummary(BaseModel):
     outstanding_amount: float | int | None = None
     minimum_due: float | int | None = None
     days_past_due: int | None = None
+    recommended_card: str | None = None
+    offered_credit_limit: float | int | None = None
+    annual_fee: float | int | None = None
+    match_score: float | int | None = None
     allow_voice_calls: bool = False
     do_not_call: bool = False
     contact_restricted: bool = False
@@ -37,6 +46,7 @@ class CustomerSummary(BaseModel):
 class SessionRequest(BaseModel):
     customer_id: str = Field(..., min_length=1, max_length=80)
     language: str | None = Field(default=None, max_length=80)
+    dataset_type: DatasetType = "debt_collection"
 
 
 class PhoneCallRequest(SessionRequest):
@@ -60,8 +70,13 @@ def require_env(name: str) -> str:
     return value
 
 
-def load_dataset() -> dict[str, Any]:
-    dataset_path = DATASET_PATH if os.path.isabs(DATASET_PATH) else os.path.join(REPO_ROOT, DATASET_PATH)
+def dataset_path_for(dataset_type: DatasetType) -> str:
+    configured_path = DATASET_PATHS[dataset_type]
+    return configured_path if os.path.isabs(configured_path) else os.path.join(REPO_ROOT, configured_path)
+
+
+def load_dataset(dataset_type: DatasetType) -> dict[str, Any] | list[dict[str, Any]]:
+    dataset_path = dataset_path_for(dataset_type)
     try:
         with open(dataset_path, encoding="utf-8") as file:
             return json.load(file)
@@ -71,15 +86,47 @@ def load_dataset() -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Customer data file is invalid JSON: {exc}") from exc
 
 
-def all_customer_records() -> list[dict[str, Any]]:
-    dataset = load_dataset()
+def all_customer_records(dataset_type: DatasetType) -> list[dict[str, Any]]:
+    dataset = load_dataset(dataset_type)
+    if dataset_type == "credit_card":
+        if not isinstance(dataset, list):
+            raise HTTPException(status_code=500, detail="Credit card customer data file must contain a customer array")
+        return dataset
+
+    if not isinstance(dataset, dict):
+        raise HTTPException(status_code=500, detail="Debt collection customer data file must contain an object")
     customers = dataset.get("customers")
     if not isinstance(customers, list):
         raise HTTPException(status_code=500, detail="Customer data file must contain a customers array")
     return customers
 
 
-def summarize_customer(record: dict[str, Any]) -> CustomerSummary:
+def summarize_customer(record: dict[str, Any], dataset_type: DatasetType = "debt_collection") -> CustomerSummary:
+    if dataset_type == "credit_card":
+        customer = record.get("customerInformation", {})
+        contact = record.get("contact", {})
+        eligibility = record.get("eligibility", {})
+        recommended_card = eligibility.get("recommendedCard", {})
+        ai_context = record.get("aiContext", {})
+
+        return CustomerSummary(
+            dataset_type=dataset_type,
+            customer_id=record.get("customerId") or customer.get("customerId", ""),
+            name=customer.get("fullName", "Unknown Customer"),
+            phone=contact.get("phone"),
+            city=customer.get("city"),
+            preferred_language=contact.get("preferredCallLanguage") or customer.get("preferredLanguage"),
+            scenario="Credit card offer",
+            priority=ai_context.get("recommendedConversationStyle"),
+            recommended_card=recommended_card.get("cardName"),
+            offered_credit_limit=recommended_card.get("offeredCreditLimit"),
+            annual_fee=recommended_card.get("annualFee"),
+            match_score=recommended_card.get("matchScore"),
+            allow_voice_calls=bool(contact.get("voiceConsentOnFile")) and not bool(contact.get("dncRegistered")),
+            do_not_call=bool(contact.get("dncRegistered")) or bool(contact.get("marketingCallOptOut")),
+            contact_restricted=not bool(contact.get("phoneVerified", True)),
+        )
+
     customer = record.get("customer", {})
     account = (record.get("accounts") or [{}])[0]
     case = record.get("collectionCase", {})
@@ -87,6 +134,7 @@ def summarize_customer(record: dict[str, Any]) -> CustomerSummary:
     compliance = record.get("compliance", {})
 
     return CustomerSummary(
+        dataset_type=dataset_type,
         customer_id=customer.get("customerId", ""),
         name=customer.get("fullName", "Unknown Customer"),
         phone=customer.get("phone"),
@@ -103,16 +151,38 @@ def summarize_customer(record: dict[str, Any]) -> CustomerSummary:
     )
 
 
-def find_customer_record(customer_id: str) -> dict[str, Any]:
-    for record in all_customer_records():
-        customer = record.get("customer", {})
-        if customer.get("customerId") == customer_id:
+def record_customer_id(record: dict[str, Any], dataset_type: DatasetType) -> str | None:
+    if dataset_type == "credit_card":
+        return record.get("customerId") or record.get("customerInformation", {}).get("customerId")
+    return record.get("customer", {}).get("customerId")
+
+
+def find_customer_record(customer_id: str, dataset_type: DatasetType) -> dict[str, Any]:
+    for record in all_customer_records(dataset_type):
+        if record_customer_id(record, dataset_type) == customer_id:
             return record
     raise HTTPException(status_code=404, detail=f"Customer not found: {customer_id}")
 
 
-def assert_customer_can_be_called(record: dict[str, Any]) -> None:
-    summary = summarize_customer(record)
+def assert_customer_can_be_called(record: dict[str, Any], dataset_type: DatasetType) -> None:
+    summary = summarize_customer(record, dataset_type)
+    if dataset_type == "credit_card":
+        contact = record.get("contact", {})
+        blocked_reasons = []
+        if not summary.phone:
+            blocked_reasons.append("missing phone number")
+        if not summary.allow_voice_calls:
+            blocked_reasons.append("voice calls are not allowed")
+        if summary.do_not_call:
+            blocked_reasons.append("customer is marked do-not-call or marketing opt-out")
+        if summary.contact_restricted:
+            blocked_reasons.append("phone number is not verified")
+        if contact.get("preferredCommunication") and contact.get("preferredCommunication") != "Voice Call":
+            blocked_reasons.append("customer does not prefer voice calls")
+        if blocked_reasons:
+            raise HTTPException(status_code=409, detail="Cannot call customer: " + ", ".join(blocked_reasons))
+        return
+
     preferences = record.get("communicationPreferences", {})
     compliance = record.get("compliance", {})
     fraud_and_dispute = record.get("fraudAndDispute", {})
@@ -142,34 +212,42 @@ def assert_customer_can_be_called(record: dict[str, Any]) -> None:
         raise HTTPException(status_code=409, detail="Cannot call customer: " + ", ".join(blocked_reasons))
 
 
-def customer_payload(record: dict[str, Any], language: str | None) -> dict[str, Any]:
-    summary = summarize_customer(record).model_dump()
+def customer_payload(record: dict[str, Any], language: str | None, dataset_type: DatasetType) -> dict[str, Any]:
+    summary = summarize_customer(record, dataset_type).model_dump()
     if language:
         summary["selected_language"] = language
-    return {"summary": summary, "record": record, "language": language or summary.get("preferred_language")}
+    return {
+        "summary": summary,
+        "record": record,
+        "language": language or summary.get("preferred_language"),
+        "prompt_type": dataset_type,
+    }
 
 
 async def create_livekit_session(
     record: dict[str, Any],
     *,
     dial_phone: bool,
+    dataset_type: DatasetType,
     language: str | None = None,
     wait_until_answered: bool = False,
 ) -> SessionResponse:
     if dial_phone:
-        assert_customer_can_be_called(record)
+        assert_customer_can_be_called(record, dataset_type)
 
-    summary = summarize_customer(record)
+    summary = summarize_customer(record, dataset_type)
     livekit_url = require_env("LIVEKIT_URL")
     api_key = require_env("LIVEKIT_API_KEY")
     api_secret = require_env("LIVEKIT_API_SECRET")
 
-    room_name = f"debt-collection-{summary.customer_id.lower()}-{uuid.uuid4().hex[:8]}"
+    room_prefix = "debt-collection" if dataset_type == "debt_collection" else "credit-card-offer"
+    room_name = f"{room_prefix}-{summary.customer_id.lower()}-{uuid.uuid4().hex[:8]}"
     participant_name = f"operator-{uuid.uuid4().hex[:8]}"
     selected_language = language or summary.preferred_language
     metadata = json.dumps({
-        "customer": customer_payload(record, selected_language),
+        "customer": customer_payload(record, selected_language, dataset_type),
         "call_type": "phone" if dial_phone else "browser",
+        "prompt_type": dataset_type,
         "language": selected_language,
     })
 
@@ -249,22 +327,23 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/customers", response_model=list[CustomerSummary])
-def list_customers() -> list[CustomerSummary]:
-    return [summarize_customer(record) for record in all_customer_records()]
+def list_customers(dataset_type: DatasetType = "debt_collection") -> list[CustomerSummary]:
+    return [summarize_customer(record, dataset_type) for record in all_customer_records(dataset_type)]
 
 
 @app.post("/api/session", response_model=SessionResponse)
 async def create_session(payload: SessionRequest) -> SessionResponse:
-    record = find_customer_record(payload.customer_id)
-    return await create_livekit_session(record, dial_phone=False, language=payload.language)
+    record = find_customer_record(payload.customer_id, payload.dataset_type)
+    return await create_livekit_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language)
 
 
 @app.post("/api/call", response_model=SessionResponse)
 async def call_customer(payload: PhoneCallRequest) -> SessionResponse:
-    record = find_customer_record(payload.customer_id)
+    record = find_customer_record(payload.customer_id, payload.dataset_type)
     return await create_livekit_session(
         record,
         dial_phone=True,
+        dataset_type=payload.dataset_type,
         language=payload.language,
         wait_until_answered=payload.wait_until_answered,
     )

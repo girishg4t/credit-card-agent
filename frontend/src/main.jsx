@@ -6,7 +6,11 @@ import './styles.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-const languageOptions = ['English', 'Hindi', 'Tamil', 'Telugu', 'Kannada', 'Malayalam', 'Marathi', 'Gujarati', 'Bengali'];
+const languageOptions = ['English', 'Hindi', 'Tamil', 'Telugu', 'Kannada', 'Malayalam', 'Marathi', 'Gujarati', 'Bengali', 'Punjabi', 'Urdu', 'Konkani'];
+const datasetOptions = [
+  { value: 'debt_collection', label: 'Debt collection' },
+  { value: 'credit_card', label: 'Credit card sales' },
+];
 
 function ParticipantsBadge() {
   const participants = useParticipants();
@@ -22,6 +26,7 @@ function ParticipantsBadge() {
 
 function App() {
   const [customers, setCustomers] = useState([]);
+  const [datasetType, setDatasetType] = useState('debt_collection');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [lastCallMode, setLastCallMode] = useState('browser');
@@ -31,9 +36,10 @@ function App() {
   const [isStarting, setIsStarting] = useState(false);
 
   const selectedCustomer = customers.find((customer) => customer.customer_id === selectedCustomerId);
+  const canStartCall = !isStarting && !isLoadingCustomers && Boolean(selectedCustomer);
 
   useEffect(() => {
-    document.title = session ? `Live call: ${session.customer.name}` : 'Credit Card Collections Agent';
+    document.title = session ? `Live call: ${session.customer.name}` : 'Credit Card Voice Agent';
   }, [session]);
 
   useEffect(() => {
@@ -42,7 +48,7 @@ function App() {
       setIsLoadingCustomers(true);
 
       try {
-        const response = await fetch(`${API_BASE_URL}/api/customers`);
+        const response = await fetch(`${API_BASE_URL}/api/customers?dataset_type=${encodeURIComponent(datasetType)}`);
         const body = await response.json();
         if (!response.ok) {
           throw new Error(body.detail || 'Could not load customers.');
@@ -59,7 +65,17 @@ function App() {
     }
 
     loadCustomers();
-  }, []);
+  }, [datasetType]);
+
+  function changeDataset(nextDatasetType) {
+    setError('');
+    setCustomers([]);
+    setSelectedCustomerId('');
+    setSelectedLanguage('English');
+    setIsLoadingCustomers(true);
+    setDatasetType(nextDatasetType);
+    setSession(null);
+  }
 
   function changeCustomer(customerId) {
     const nextCustomer = customers.find((customer) => customer.customer_id === customerId);
@@ -71,7 +87,7 @@ function App() {
     event?.preventDefault();
     setError('');
 
-    if (!selectedCustomerId) {
+    if (!selectedCustomer) {
       setError('Select a customer first.');
       return;
     }
@@ -84,7 +100,7 @@ function App() {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customer_id: selectedCustomerId, language: selectedLanguage }),
+        body: JSON.stringify({ customer_id: selectedCustomer.customer_id, language: selectedLanguage, dataset_type: datasetType }),
       });
 
       const body = await response.json();
@@ -105,7 +121,7 @@ function App() {
       <main className="page call-page">
         <section className="call-card">
           <div className="call-header">
-            <p className="eyebrow">Live collections conversation</p>
+            <p className="eyebrow">Live {session.customer.dataset_type === 'credit_card' ? 'credit card sales' : 'collections'} conversation</p>
             <h1>{session.phone_call_started ? 'Calling' : 'Testing'} {session.customer.name}</h1>
             <p className="muted">Room: {session.room_name}</p>
             <p className="muted">Language: {session.language || selectedLanguage}</p>
@@ -142,9 +158,9 @@ function App() {
     <main className="page">
       <section className="hero">
         <p className="eyebrow">AI voice agent</p>
-        <h1>Credit card collection calls with customer context</h1>
+        <h1>Credit card calls with customer context</h1>
         <p>
-          Select a customer from the JSON dataset, test the agent in your browser, or dial the customer through LiveKit SIP.
+          Select a call type and customer from the JSON datasets, test the agent in your browser, or dial the customer through LiveKit SIP.
         </p>
       </section>
 
@@ -152,22 +168,32 @@ function App() {
         <div className="setup-header">
           <div>
             <p className="eyebrow">Call setup</p>
-            <h2>Select customer and language</h2>
+            <h2>Select call type, customer, and language</h2>
           </div>
-          <span className="count-pill">{customers.length} customers</span>
+          <span className="count-pill">{isLoadingCustomers ? 'Loading...' : `${customers.length} customers`}</span>
         </div>
+
+        <label>
+          Call type
+          <select value={datasetType} onChange={(event) => changeDataset(event.target.value)}>
+            {datasetOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
 
         <div className="selector-grid">
           <label>
             Customer
             <select
-              disabled={isLoadingCustomers}
+              disabled={isLoadingCustomers || customers.length === 0}
               value={selectedCustomerId}
               onChange={(event) => changeCustomer(event.target.value)}
             >
+              {!selectedCustomerId && <option value="">Select a customer</option>}
               {customers.map((customer) => (
                 <option key={customer.customer_id} value={customer.customer_id}>
-                  {customer.customer_id} - {customer.name} - {customer.scenario}
+                  {customer.customer_id} - {customer.name} - {customer.recommended_card || customer.scenario}
                 </option>
               ))}
             </select>
@@ -193,9 +219,13 @@ function App() {
             <div><strong>City</strong><span>{selectedCustomer.city || 'Unknown'}</span></div>
             <div><strong>Dataset language</strong><span>{selectedCustomer.preferred_language || 'Unknown'}</span></div>
             <div><strong>Call language</strong><span>{selectedLanguage}</span></div>
-            <div><strong>Outstanding</strong><span>INR {selectedCustomer.outstanding_amount ?? '-'}</span></div>
-            <div><strong>Minimum due</strong><span>INR {selectedCustomer.minimum_due ?? '-'}</span></div>
-            <div><strong>DPD</strong><span>{selectedCustomer.days_past_due ?? '-'}</span></div>
+            {datasetType === 'debt_collection' && <div><strong>Outstanding</strong><span>INR {selectedCustomer.outstanding_amount ?? '-'}</span></div>}
+            {datasetType === 'debt_collection' && <div><strong>Minimum due</strong><span>INR {selectedCustomer.minimum_due ?? '-'}</span></div>}
+            {datasetType === 'debt_collection' && <div><strong>DPD</strong><span>{selectedCustomer.days_past_due ?? '-'}</span></div>}
+            {datasetType === 'credit_card' && <div><strong>Recommended card</strong><span>{selectedCustomer.recommended_card || '-'}</span></div>}
+            {datasetType === 'credit_card' && <div><strong>Offered limit</strong><span>INR {selectedCustomer.offered_credit_limit ?? '-'}</span></div>}
+            {datasetType === 'credit_card' && <div><strong>Annual fee</strong><span>INR {selectedCustomer.annual_fee ?? '-'}</span></div>}
+            {datasetType === 'credit_card' && <div><strong>Match score</strong><span>{selectedCustomer.match_score ?? '-'}</span></div>}
             <div><strong>Scenario</strong><span>{selectedCustomer.scenario || '-'}</span></div>
             <div><strong>Priority</strong><span>{selectedCustomer.priority || '-'}</span></div>
           </section>
@@ -208,10 +238,10 @@ function App() {
         {error && <p className="error">{error}</p>}
 
         <div className="actions">
-          <button type="button" disabled={isStarting || isLoadingCustomers} onClick={(event) => startCall('browser', event)}>
+          <button type="button" disabled={!canStartCall} onClick={(event) => startCall('browser', event)}>
             {isStarting ? 'Starting...' : 'Test in browser'}
           </button>
-          <button type="button" className="call-button" disabled={isStarting || isLoadingCustomers} onClick={(event) => startCall('phone', event)}>
+          <button type="button" className="call-button" disabled={!canStartCall} onClick={(event) => startCall('phone', event)}>
             {isStarting ? 'Dialing...' : 'Make phone call'}
           </button>
         </div>
