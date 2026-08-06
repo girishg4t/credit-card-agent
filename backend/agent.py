@@ -13,6 +13,12 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 DEBT_PROMPT_PATH = os.path.join(REPO_ROOT, "debt-collection-voice-agent-prompt.md")
 CREDIT_CARD_PROMPT_PATH = os.path.join(REPO_ROOT, "CardMate_AI_Relationship_Manager_System_Prompt.md")
+OPENAI_VOICE_BY_STYLE = {
+    "warm_female": "coral",
+    "calm_male": "ash",
+    "neutral": "alloy",
+    "energetic": "verse",
+}
 
 
 def read_prompt_template(path: str) -> str:
@@ -233,16 +239,22 @@ def render_credit_card_prompt(customer: dict, language: str) -> str:
 
 
 def agent_instructions(customer: dict) -> str:
+    agent_config = customer.get("agent_config")
     if customer.get("prompt_override"):
-        return customer["prompt_override"]
+        instructions = customer["prompt_override"]
+    else:
+        language = customer.get("language") or customer.get("summary", {}).get("preferred_language") or "English"
+        prompt_type = customer.get("prompt_type") or customer.get("summary", {}).get("dataset_type") or "debt_collection"
 
-    language = customer.get("language") or customer.get("summary", {}).get("preferred_language") or "English"
-    prompt_type = customer.get("prompt_type") or customer.get("summary", {}).get("dataset_type") or "debt_collection"
+        if prompt_type == "credit_card":
+            instructions = render_credit_card_prompt(customer, language)
+        else:
+            instructions = render_debt_prompt(customer, language)
 
-    if prompt_type == "credit_card":
-        return render_credit_card_prompt(customer, language)
+    if not agent_config:
+        return instructions
 
-    return render_debt_prompt(customer, language)
+    return f"{instructions}\n\n---\n\n## Operator-selected agent configuration\n\n```json\n{json.dumps(agent_config, indent=2, ensure_ascii=False)}\n```".strip()
 
 
 def realtime_turn_detection() -> TurnDetection:
@@ -265,19 +277,25 @@ def realtime_turn_detection() -> TurnDetection:
     )
 
 
+def realtime_voice(agent_config: dict | None) -> str:
+    configured_voice = (agent_config or {}).get("voice")
+    return OPENAI_VOICE_BY_STYLE.get(configured_voice, os.getenv("OPENAI_REALTIME_VOICE", "alloy"))
+
+
 async def entrypoint(ctx: JobContext) -> None:
     dispatch_metadata = json.loads(ctx.job.metadata or "{}")
     customer = dispatch_metadata.get("customer", {})
     summary = customer.get("summary", {})
     prompt_type = dispatch_metadata.get("prompt_type") or customer.get("prompt_type") or summary.get("dataset_type") or "debt_collection"
     language = dispatch_metadata.get("language") or customer.get("language") or summary.get("preferred_language") or "English"
+    agent_config = dispatch_metadata.get("agent_config") or customer.get("agent_config") or {}
 
     await ctx.connect()
 
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
             model=os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime"),
-            voice=os.getenv("OPENAI_REALTIME_VOICE", "alloy"),
+            voice=realtime_voice(agent_config),
             turn_detection=realtime_turn_detection(),
         )
     )

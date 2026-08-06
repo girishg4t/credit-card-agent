@@ -20,6 +20,174 @@ const agoraMllmOptions = [
   { value: 'gemini', label: 'Gemini Live' },
   { value: 'openai', label: 'OpenAI Realtime' },
 ];
+const personalityOptions = [
+  { value: 'friendly', label: 'Friendly advisor' },
+  { value: 'formal', label: 'Formal banker' },
+  { value: 'supportive', label: 'Supportive collections' },
+  { value: 'sales', label: 'Sales focused' },
+];
+const llmModelOptions = [
+  { value: 'provider_default', label: 'Provider default' },
+  { value: 'gpt_realtime', label: 'OpenAI Realtime' },
+  { value: 'gemini_live', label: 'Gemini Live' },
+  { value: 'claude', label: 'Claude' },
+];
+const sttProviderOptions = [
+  { value: 'provider_default', label: 'Provider default' },
+  { value: 'deepgram', label: 'Deepgram' },
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'google', label: 'Google' },
+];
+const ttsProviderOptions = [
+  { value: 'provider_default', label: 'Provider default' },
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'elevenlabs', label: 'ElevenLabs' },
+  { value: 'cartesia', label: 'Cartesia' },
+];
+const voiceOptions = [
+  { value: 'warm_female', label: 'Warm female' },
+  { value: 'calm_male', label: 'Calm male' },
+  { value: 'neutral', label: 'Neutral' },
+  { value: 'energetic', label: 'Energetic' },
+];
+const openaiVoiceByStyle = {
+  warm_female: 'coral',
+  calm_male: 'ash',
+  neutral: 'alloy',
+  energetic: 'verse',
+};
+const geminiVoiceByStyle = {
+  warm_female: 'Aoede',
+  calm_male: 'Charon',
+  neutral: 'Puck',
+  energetic: 'Fenrir',
+};
+const turnDetectionOptions = [
+  { value: 'server_vad', label: 'Server VAD' },
+  { value: 'semantic_vad', label: 'Semantic VAD' },
+  { value: 'manual', label: 'Manual push-to-talk' },
+];
+const latencyModeOptions = [
+  { value: 'balanced', label: 'Balanced' },
+  { value: 'fast', label: 'Fastest response' },
+  { value: 'quality', label: 'Higher quality' },
+];
+const toolOptions = [
+  {
+    value: 'eligibility_check',
+    label: 'Eligibility check',
+    description: 'Lets the agent verify whether the customer is eligible before pitching, collecting, or continuing the workflow.',
+    alternative: 'Agora can do this by calling your backend from the LLM/tool layer, but there is no Agora-specific eligibility tool built into RTC.',
+  },
+  {
+    value: 'card_recommendation',
+    label: 'Card recommendation',
+    description: 'Lets the agent use customer context to recommend the best card or offer instead of reading a static script.',
+    alternative: 'Agora can pass the same context into ConvoAI instructions; richer recommendation logic should still live in your backend.',
+  },
+  {
+    value: 'payment_plan',
+    label: 'Payment plan',
+    description: 'Lets the agent discuss installment or minimum-due options for debt collection calls.',
+    alternative: 'Agora can support this through prompt instructions and external business APIs, not through a native payment-plan feature.',
+  },
+  {
+    value: 'crm_notes',
+    label: 'CRM notes',
+    description: 'Lets the agent create structured notes after or during the call for follow-up and audit.',
+    alternative: 'Agora provides media/session plumbing; CRM writeback should be implemented in your backend or webhook flow.',
+  },
+];
+const providerFeatureCatalog = {
+  livekit: [
+    {
+      name: 'Agent framework',
+      status: 'Native',
+      description: 'LiveKit Agents runs a Python/Node agent as a realtime room participant with jobs, dispatch, and agent lifecycle support.',
+      alternative: 'Agora uses ConvoAI sessions for the agent, while app-specific orchestration remains mostly in your backend.',
+    },
+    {
+      name: 'Turn detection',
+      status: 'Configurable',
+      description: 'Controls how the agent detects when the customer is done speaking. Semantic VAD can make conversations feel more natural than simple silence detection.',
+      alternative: 'Agora ConvoAI exposes server VAD settings in the mLLM config; semantic turn detection depends on the selected model/provider.',
+    },
+    {
+      name: 'Interruptions',
+      status: 'Strong support',
+      description: 'Allows customer barge-in so the agent stops talking when the user interrupts.',
+      alternative: 'Agora can support interruption behavior through realtime model/VAD configuration, but exact behavior depends on the mLLM provider.',
+    },
+    {
+      name: 'Tool calling',
+      status: 'First-class',
+      description: 'LiveKit Agents can define tools in code and wire them into the LLM workflow for business actions like eligibility checks or CRM updates.',
+      alternative: 'Agora can use model/tool capabilities through ConvoAI and your backend, but the app must own the tool orchestration pattern.',
+    },
+    {
+      name: 'Observability',
+      status: 'Built-in cloud support',
+      description: 'LiveKit Cloud supports transcripts, traces, and agent observability for debugging call quality and agent behavior.',
+      alternative: 'Agora provides RTC analytics and logs; agent transcript/trace evaluation should be added through your app and model provider logs.',
+    },
+    {
+      name: 'Phone calls',
+      status: 'SIP ready',
+      description: 'LiveKit SIP can dial phone numbers and bring phone participants into the same room as the AI agent.',
+      alternative: 'This app currently supports Agora only for browser audio sessions, not phone dial-out.',
+    },
+  ],
+  agora: [
+    {
+      name: 'RTC media quality',
+      status: 'Core strength',
+      description: 'Agora is optimized for low-latency global voice/video transport, mobile SDK quality, and production RTC sessions.',
+      alternative: 'LiveKit also uses WebRTC and can be self-hosted, but Agora is especially mature as a managed RTC network.',
+    },
+    {
+      name: 'ConvoAI session',
+      status: 'Native',
+      description: 'Agora ConvoAI joins an RTC channel as an AI agent and connects to Gemini Live or OpenAI Realtime through mLLM config.',
+      alternative: 'LiveKit uses an agent worker dispatched into a room, where the agent code owns the AI pipeline.',
+    },
+    {
+      name: 'mLLM provider choice',
+      status: 'Configurable',
+      description: 'Lets you choose the realtime model provider used by Agora ConvoAI, currently Gemini Live or OpenAI Realtime in this app.',
+      alternative: 'LiveKit can integrate many providers through agent SDK plugins or direct model SDK usage.',
+    },
+    {
+      name: 'Voice configuration',
+      status: 'Provider mapped',
+      description: 'The selected voice style maps to the underlying Gemini/OpenAI voice parameter sent to Agora ConvoAI.',
+      alternative: 'LiveKit maps the same UI voice style to the OpenAI realtime voice used by the LiveKit agent.',
+    },
+    {
+      name: 'Tools enabled',
+      status: 'App-defined',
+      description: 'These are business capabilities your app tells the agent about. Agora does not provide these as RTC features; your backend/model layer must execute them.',
+      alternative: 'LiveKit Agents has a more explicit tool-calling programming model in the agent process.',
+    },
+    {
+      name: 'Phone calls',
+      status: 'Not enabled here',
+      description: 'This app currently starts Agora as a browser audio session. Phone dial-out is blocked for Agora in the backend.',
+      alternative: 'Use LiveKit in this app when you need SIP phone dial-out.',
+    },
+  ],
+};
+const defaultAgentConfig = {
+  personality: 'friendly',
+  llm_model: 'provider_default',
+  stt_provider: 'provider_default',
+  tts_provider: 'provider_default',
+  voice: 'warm_female',
+  turn_detection: 'server_vad',
+  interruptions: true,
+  latency_mode: 'balanced',
+  tools: ['eligibility_check', 'card_recommendation'],
+  save_transcript: true,
+};
 
 function customerCanDial(customer) {
   return Boolean(customer) && customer.allow_voice_calls && !customer.do_not_call && !customer.contact_restricted && Boolean(customer.phone);
@@ -27,6 +195,22 @@ function customerCanDial(customer) {
 
 function providerCallMode(provider) {
   return 'browser';
+}
+
+function optionLabel(options, value) {
+  return options.find((option) => option.value === value)?.label || value;
+}
+
+function withoutPrompt(payload) {
+  const { prompt_override: _promptOverride, ...rest } = payload;
+  return rest;
+}
+
+function providerVoiceLabel(provider, mllmProvider, voiceStyle) {
+  if (provider === 'agora' && mllmProvider === 'gemini') {
+    return geminiVoiceByStyle[voiceStyle] || 'Provider default';
+  }
+  return openaiVoiceByStyle[voiceStyle] || 'Provider default';
 }
 
 function AgentConnectionStatus() {
@@ -145,10 +329,12 @@ function App() {
   const [datasetType, setDatasetType] = useState('debt_collection');
   const [agentProvider, setAgentProvider] = useState('livekit');
   const [agoraMllmProvider, setAgoraMllmProvider] = useState('gemini');
+  const [agentConfig, setAgentConfig] = useState(defaultAgentConfig);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [lastCallMode, setLastCallMode] = useState('browser');
   const [session, setSession] = useState(null);
+  const [startedCallPayload, setStartedCallPayload] = useState(null);
   const [pendingCall, setPendingCall] = useState(null);
   const [promptDraft, setPromptDraft] = useState('');
   const [isLoadingPrompt, setIsLoadingPrompt] = useState(false);
@@ -162,6 +348,66 @@ function App() {
   const isListPage = datasetType === 'debt_collection' || datasetType === 'credit_card';
   const listTitle = isDebtList ? 'Debt queue' : 'Credit card sales queue';
   const listSubtitle = isDebtList ? 'Customers ready for agent calls' : 'Customers ready for card offer calls';
+
+  function updateAgentConfig(key, value) {
+    setAgentConfig((current) => ({ ...current, [key]: value }));
+  }
+
+  function toggleAgentTool(tool) {
+    setAgentConfig((current) => {
+      const hasTool = current.tools.includes(tool);
+      return {
+        ...current,
+        tools: hasTool ? current.tools.filter((item) => item !== tool) : [...current.tools, tool],
+      };
+    });
+  }
+
+  function buildCallPayload(customer, language, promptOverride) {
+    return {
+      customer_id: customer.customer_id,
+      language: language || customer.preferred_language || 'English',
+      dataset_type: datasetType,
+      provider: agentProvider,
+      agora_mllm_provider: agoraMllmProvider,
+      agent_config: agentConfig,
+      prompt_override: promptOverride,
+    };
+  }
+
+  function buildProviderPayloadPreview(customer, language, promptOverride, mode) {
+    const selectedCallLanguage = language || customer.preferred_language || 'English';
+    const customerContext = {
+      summary: {
+        ...customer,
+        selected_language: selectedCallLanguage,
+      },
+      language: selectedCallLanguage,
+      prompt_type: datasetType,
+      agent_config: agentConfig,
+    };
+
+    const livekitMetadata = {
+      customer: customerContext,
+      call_type: mode === 'phone' ? 'phone' : 'browser',
+      prompt_type: datasetType,
+      language: selectedCallLanguage,
+      agent_config: agentConfig,
+    };
+
+    const agoraPreview = {
+      channel: 'Generated by backend when call starts',
+      user_uid: 'Generated by backend when call starts',
+      agent_uid: 'Generated by backend when call starts',
+      mllm_provider: agoraMllmProvider,
+      provider_voice: providerVoiceLabel('agora', agoraMllmProvider, agentConfig.voice),
+      greeting_message: `Hello ${customer.name}, I am an AI assistant calling about ${datasetType === 'credit_card' ? 'your pre-approved credit card offer' : 'your credit card account'}. I will speak in ${selectedCallLanguage}. Is now a good time to talk?`,
+      customer_context: customerContext,
+      instructions_source: 'Prompt text is hidden in this UI preview. Backend sends the edited prompt as instructions when present.',
+    };
+
+    return { livekitMetadata, agoraPreview };
+  }
 
   useEffect(() => {
     document.title = session ? `Live call: ${session.customer.name}` : 'Credit Card Voice Agent';
@@ -219,6 +465,7 @@ function App() {
       customer,
       language: rowLanguage,
       mode: providerCallMode(agentProvider),
+      agentConfig,
     });
 
     try {
@@ -229,6 +476,7 @@ function App() {
           customer_id: customer.customer_id,
           language: rowLanguage,
           dataset_type: datasetType,
+          agent_config: agentConfig,
         }),
       });
       const body = await response.json();
@@ -276,17 +524,11 @@ function App() {
 
     try {
       const endpoint = mode === 'phone' ? '/api/call' : '/api/session';
+      const requestPayload = buildCallPayload(customerOverride, languageOverride, promptOverride);
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customer_id: customerOverride.customer_id,
-          language: languageOverride || customerOverride.preferred_language || 'English',
-          dataset_type: datasetType,
-          provider: agentProvider,
-          agora_mllm_provider: agoraMllmProvider,
-          prompt_override: promptOverride,
-        }),
+        body: JSON.stringify(requestPayload),
       });
 
       const body = await response.json();
@@ -294,12 +536,121 @@ function App() {
         throw new Error(body.detail || `Could not start the ${agentProvider === 'agora' ? 'Agora ConvoAI' : 'LiveKit'} session.`);
       }
 
+      setStartedCallPayload(requestPayload);
       setSession(body);
     } catch (caught) {
       setError(caught.message);
     } finally {
       setIsStarting(false);
     }
+  }
+
+  function renderPayloadPreviews() {
+    if (!pendingCall) {
+      return null;
+    }
+
+    const endpoint = pendingCall.mode === 'phone' ? '/api/call' : '/api/session';
+    const apiPayload = withoutPrompt(buildCallPayload(pendingCall.customer, pendingCall.language, promptDraft));
+    const { livekitMetadata, agoraPreview } = buildProviderPayloadPreview(
+      pendingCall.customer,
+      pendingCall.language,
+      promptDraft,
+      pendingCall.mode,
+    );
+
+    return (
+      <section className="payload-preview-group" aria-label="Call payload previews">
+        <details className="payload-preview">
+          <summary>View exact frontend API payload sent to {endpoint}</summary>
+          <pre>{JSON.stringify(apiPayload, null, 2)}</pre>
+        </details>
+
+        <details className="payload-preview">
+          <summary>View LiveKit agent dispatch metadata</summary>
+          <pre>{JSON.stringify(livekitMetadata, null, 2)}</pre>
+        </details>
+
+        <details className="payload-preview">
+          <summary>View Agora ConvoAI agent parameters</summary>
+          <pre>{JSON.stringify(agoraPreview, null, 2)}</pre>
+        </details>
+      </section>
+    );
+  }
+
+  function renderProviderFeatures() {
+    const features = providerFeatureCatalog[agentProvider] || [];
+    const otherProvider = agentProvider === 'agora' ? 'LiveKit' : 'Agora';
+
+    return (
+      <section className="provider-feature-panel" aria-label={`${agentProvider === 'agora' ? 'Agora' : 'LiveKit'} feature comparison`}>
+        <div className="feature-panel-header">
+          <div>
+            <p className="eyebrow">Provider feature comparison</p>
+            <h3>{agentProvider === 'agora' ? 'Agora ConvoAI options' : 'LiveKit agent options'}</h3>
+          </div>
+          <span className="count-pill">Compared with {otherProvider}</span>
+        </div>
+        <div className="feature-card-grid">
+          {features.map((feature) => (
+            <article className="feature-card" key={feature.name} title={`${feature.description} Alternative: ${feature.alternative}`}>
+              <div className="feature-card-title">
+                <strong>{feature.name}</strong>
+                <span>{feature.status}</span>
+              </div>
+              <p>{feature.description}</p>
+              <details className="feature-help">
+                <summary>What is the alternative?</summary>
+                <p>{feature.alternative}</p>
+              </details>
+            </article>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  function renderStartedConfigSummary() {
+    const config = startedCallPayload?.agent_config || agentConfig;
+    const tools = config.tools || [];
+
+    return (
+      <section className="started-config" aria-label="Agent options selected for this call">
+        <div className="started-config-header">
+          <div>
+            <p className="eyebrow">Selected agent options</p>
+            <h3>Configuration used for this call</h3>
+          </div>
+          <span className="count-pill">{startedCallPayload?.provider === 'agora' ? 'Agora' : 'LiveKit'}</span>
+        </div>
+
+        <section className="customer-summary live-customer-summary">
+          <div><strong>Provider</strong><span>{startedCallPayload?.provider === 'agora' ? 'Agora ConvoAI' : 'LiveKit'}</span></div>
+          {startedCallPayload?.provider === 'agora' && <div><strong>Agora model</strong><span>{startedCallPayload.agora_mllm_provider === 'openai' ? 'OpenAI Realtime' : 'Gemini Live'}</span></div>}
+          <div><strong>Language</strong><span>{startedCallPayload?.language || session.language || selectedLanguage}</span></div>
+          <div><strong>Call type</strong><span>{startedCallPayload?.dataset_type === 'credit_card' ? 'Credit card sales' : 'Debt collection'}</span></div>
+          <div><strong>Personality</strong><span>{optionLabel(personalityOptions, config.personality)}</span></div>
+          <div><strong>LLM model</strong><span>{optionLabel(llmModelOptions, config.llm_model)}</span></div>
+          <div><strong>STT</strong><span>{optionLabel(sttProviderOptions, config.stt_provider)}</span></div>
+          <div><strong>TTS</strong><span>{optionLabel(ttsProviderOptions, config.tts_provider)}</span></div>
+          <div><strong>Voice style</strong><span>{optionLabel(voiceOptions, config.voice)}</span></div>
+          <div><strong>Provider voice</strong><span>{providerVoiceLabel(startedCallPayload?.provider, startedCallPayload?.agora_mllm_provider, config.voice)}</span></div>
+          <div><strong>Turn detection</strong><span>{optionLabel(turnDetectionOptions, config.turn_detection)}</span></div>
+          <div><strong>Interruptions</strong><span>{config.interruptions ? 'Allowed' : 'Disabled'}</span></div>
+          <div><strong>Latency mode</strong><span>{optionLabel(latencyModeOptions, config.latency_mode)}</span></div>
+          <div><strong>Tools</strong><span>{tools.length ? tools.map((tool) => optionLabel(toolOptions, tool)).join(', ') : 'None'}</span></div>
+          <div><strong>Metrics</strong><span>{config.save_transcript ? 'Transcript and metrics enabled' : 'Not saved'}</span></div>
+        </section>
+
+        {startedCallPayload && (
+          <details className="payload-preview">
+            <summary>View exact payload used to start this call</summary>
+            <pre>{JSON.stringify(withoutPrompt(startedCallPayload), null, 2)}</pre>
+          </details>
+        )}
+      </section>
+    );
   }
 
   if (session) {
@@ -328,6 +679,8 @@ function App() {
             {session.customer.dataset_type === 'debt_collection' && <div><strong>DPD</strong><span>{session.customer.days_past_due ?? '-'}</span></div>}
             {session.customer.dataset_type === 'credit_card' && <div><strong>Recommended card</strong><span>{session.customer.recommended_card || '-'}</span></div>}
           </section>
+
+          {renderStartedConfigSummary()}
 
           {session.provider === 'agora' ? (
             <AgoraCallRoom session={session} />
@@ -428,6 +781,128 @@ function App() {
             </label>
           )}
         </div>
+
+        {renderProviderFeatures()}
+
+        <section className="agent-config-screen" aria-label="Agent configuration before the call">
+          <div className="config-heading">
+            <div>
+              <p className="eyebrow">Agent configuration</p>
+              <h3>Choose how the AI agent should behave before starting the call</h3>
+            </div>
+            <button type="button" className="light-button compact-button" onClick={() => setAgentConfig(defaultAgentConfig)}>
+              Reset defaults
+            </button>
+          </div>
+
+          <div className="config-grid">
+            <label>
+              Agent personality
+              <select value={agentConfig.personality} onChange={(event) => updateAgentConfig('personality', event.target.value)}>
+                {personalityOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              LLM / realtime model
+              <select value={agentConfig.llm_model} onChange={(event) => updateAgentConfig('llm_model', event.target.value)}>
+                {llmModelOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Speech-to-text
+              <select value={agentConfig.stt_provider} onChange={(event) => updateAgentConfig('stt_provider', event.target.value)}>
+                {sttProviderOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Text-to-speech
+              <select value={agentConfig.tts_provider} onChange={(event) => updateAgentConfig('tts_provider', event.target.value)}>
+                {ttsProviderOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Voice style
+              <select value={agentConfig.voice} onChange={(event) => updateAgentConfig('voice', event.target.value)}>
+                {voiceOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Turn detection
+              <select value={agentConfig.turn_detection} onChange={(event) => updateAgentConfig('turn_detection', event.target.value)}>
+                {turnDetectionOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Latency mode
+              <select value={agentConfig.latency_mode} onChange={(event) => updateAgentConfig('latency_mode', event.target.value)}>
+                {latencyModeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Interruptions
+              <select value={agentConfig.interruptions ? 'enabled' : 'disabled'} onChange={(event) => updateAgentConfig('interruptions', event.target.value === 'enabled')}>
+                <option value="enabled">Allow customer barge-in</option>
+                <option value="disabled">Agent finishes each response</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="config-toggles">
+            <div>
+              <strong>Tools enabled</strong>
+              <span>Select the tools this agent can use during the call.</span>
+            </div>
+            <div className="tool-chip-grid">
+              {toolOptions.map((option) => (
+                <article className="tool-card" key={option.value} title={`${option.description} Alternative: ${option.alternative}`}>
+                  <label className="tool-chip">
+                    <input
+                      type="checkbox"
+                      checked={agentConfig.tools.includes(option.value)}
+                      onChange={() => toggleAgentTool(option.value)}
+                    />
+                    {option.label}
+                  </label>
+                  <p>{option.description}</p>
+                  <details className="feature-help">
+                    <summary>Provider alternative</summary>
+                    <p>{option.alternative}</p>
+                  </details>
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <label className="config-checkbox">
+            <input
+              type="checkbox"
+              checked={agentConfig.save_transcript}
+              onChange={(event) => updateAgentConfig('save_transcript', event.target.checked)}
+            />
+            Save transcript and evaluation metrics for Agora vs LiveKit comparison
+          </label>
+        </section>
 
         {!isListPage && (
         <div className="selector-grid">
@@ -576,6 +1051,16 @@ function App() {
               {agentProvider === 'agora' && <div><strong>Agora model</strong><span>{agoraMllmProvider === 'gemini' ? 'Gemini Live' : 'OpenAI Realtime'}</span></div>}
               <div><strong>Call mode</strong><span>{pendingCall.mode === 'phone' ? 'Phone call' : 'Browser conversation'}</span></div>
               <div><strong>Language</strong><span>{pendingCall.language}</span></div>
+              <div><strong>Personality</strong><span>{optionLabel(personalityOptions, pendingCall.agentConfig.personality)}</span></div>
+              <div><strong>LLM model</strong><span>{optionLabel(llmModelOptions, pendingCall.agentConfig.llm_model)}</span></div>
+              <div><strong>STT</strong><span>{optionLabel(sttProviderOptions, pendingCall.agentConfig.stt_provider)}</span></div>
+              <div><strong>TTS / voice style</strong><span>{optionLabel(ttsProviderOptions, pendingCall.agentConfig.tts_provider)} / {optionLabel(voiceOptions, pendingCall.agentConfig.voice)}</span></div>
+              <div><strong>Provider voice</strong><span>{providerVoiceLabel(agentProvider, agoraMllmProvider, pendingCall.agentConfig.voice)}</span></div>
+              <div><strong>Turn detection</strong><span>{optionLabel(turnDetectionOptions, pendingCall.agentConfig.turn_detection)}</span></div>
+              <div><strong>Interruptions</strong><span>{pendingCall.agentConfig.interruptions ? 'Allowed' : 'Disabled'}</span></div>
+              <div><strong>Latency mode</strong><span>{optionLabel(latencyModeOptions, pendingCall.agentConfig.latency_mode)}</span></div>
+              <div><strong>Tools</strong><span>{pendingCall.agentConfig.tools.length ? pendingCall.agentConfig.tools.map((tool) => optionLabel(toolOptions, tool)).join(', ') : 'None'}</span></div>
+              <div><strong>Metrics</strong><span>{pendingCall.agentConfig.save_transcript ? 'Transcript and metrics enabled' : 'Not saved'}</span></div>
               <div><strong>Scenario</strong><span>{pendingCall.customer.scenario || '-'}</span></div>
               {pendingCall.customer.dataset_type === 'debt_collection' && <div><strong>Outstanding</strong><span>INR {pendingCall.customer.outstanding_amount ?? '-'}</span></div>}
               {pendingCall.customer.dataset_type === 'debt_collection' && <div><strong>Minimum due</strong><span>INR {pendingCall.customer.minimum_due ?? '-'}</span></div>}
@@ -591,15 +1076,11 @@ function App() {
               <p className="call-hint">Agora ConvoAI starts a browser audio session. Use LiveKit if you need a real phone dial-out.</p>
             )}
 
-            <label className="prompt-editor">
-              Agent prompt with dynamic customer variables
-              <textarea
-                value={isLoadingPrompt ? 'Loading generated prompt...' : promptDraft}
-                disabled={isLoadingPrompt || isStarting}
-                onChange={(event) => setPromptDraft(event.target.value)}
-                rows={12}
-              />
-            </label>
+            {renderPayloadPreviews()}
+
+            <p className="call-hint">
+              Agent instructions are generated in the background and hidden here. Use the expandable payload sections to review all non-prompt call parameters.
+            </p>
 
             <div className="actions call-modal-actions">
               <button type="button" className="light-button" onClick={closeCallModal}>Cancel</button>

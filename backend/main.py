@@ -31,6 +31,18 @@ DATASET_PATHS: dict[DatasetType, str] = {
     "debt_collection": os.getenv("DEBT_COLLECTION_DATA_PATH", os.getenv("CUSTOMER_DATA_PATH", "debt_collection_100_customers.json")),
     "credit_card": os.getenv("CREDIT_CARD_DATA_PATH", "customers.json"),
 }
+OPENAI_VOICE_BY_STYLE = {
+    "warm_female": "coral",
+    "calm_male": "ash",
+    "neutral": "alloy",
+    "energetic": "verse",
+}
+GEMINI_VOICE_BY_STYLE = {
+    "warm_female": "Aoede",
+    "calm_male": "Charon",
+    "neutral": "Puck",
+    "energetic": "Fenrir",
+}
 
 
 class CustomerSummary(BaseModel):
@@ -61,6 +73,7 @@ class SessionRequest(BaseModel):
     dataset_type: DatasetType = "debt_collection"
     provider: AgentProvider = "livekit"
     agora_mllm_provider: AgoraMllmProvider = "gemini"
+    agent_config: dict[str, Any] | None = None
     prompt_override: str | None = None
 
 
@@ -68,6 +81,7 @@ class PromptPreviewRequest(BaseModel):
     customer_id: str = Field(..., min_length=1, max_length=80)
     language: str | None = Field(default=None, max_length=80)
     dataset_type: DatasetType = "debt_collection"
+    agent_config: dict[str, Any] | None = None
 
 
 class PromptPreviewResponse(BaseModel):
@@ -111,7 +125,18 @@ def require_any_env(*names: str) -> str:
     raise HTTPException(status_code=500, detail=f"Missing required environment variable: {joined_names}")
 
 
-def agora_mllm_config(provider: AgoraMllmProvider, instructions: str, greeting_message: str) -> dict[str, Any]:
+def selected_voice(agent_config: dict[str, Any] | None, voice_map: dict[str, str], env_names: tuple[str, ...], default: str) -> str:
+    voice_style = (agent_config or {}).get("voice")
+    if voice_style in voice_map:
+        return voice_map[voice_style]
+    for env_name in env_names:
+        value = os.getenv(env_name)
+        if value:
+            return value
+    return default
+
+
+def agora_mllm_config(provider: AgoraMllmProvider, instructions: str, greeting_message: str, agent_config: dict[str, Any] | None = None) -> dict[str, Any]:
     if provider == "openai":
         return {
             "enable": True,
@@ -119,7 +144,7 @@ def agora_mllm_config(provider: AgoraMllmProvider, instructions: str, greeting_m
             "api_key": require_env("OPENAI_API_KEY"),
             "params": {
                 "model": os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime"),
-                "voice": os.getenv("OPENAI_REALTIME_VOICE", "alloy"),
+                "voice": selected_voice(agent_config, OPENAI_VOICE_BY_STYLE, ("OPENAI_REALTIME_VOICE",), "alloy"),
                 "instructions": instructions,
                 "input_audio_transcription": {
                     "model": os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"),
@@ -140,7 +165,7 @@ def agora_mllm_config(provider: AgoraMllmProvider, instructions: str, greeting_m
         }
 
     gemini_model = os.getenv("AGORA_GEMINI_MODEL", os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview"))
-    gemini_voice = os.getenv("AGORA_GEMINI_VOICE", os.getenv("GEMINI_LIVE_VOICE", "Charon"))
+    gemini_voice = selected_voice(agent_config, GEMINI_VOICE_BY_STYLE, ("AGORA_GEMINI_VOICE", "GEMINI_LIVE_VOICE"), "Charon")
     gemini_url = os.getenv(
         "AGORA_GEMINI_URL",
         "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent",
@@ -322,7 +347,13 @@ def assert_customer_can_be_called(record: dict[str, Any], dataset_type: DatasetT
         raise HTTPException(status_code=409, detail="Cannot call customer: " + ", ".join(blocked_reasons))
 
 
-def customer_payload(record: dict[str, Any], language: str | None, dataset_type: DatasetType, prompt_override: str | None = None) -> dict[str, Any]:
+def customer_payload(
+    record: dict[str, Any],
+    language: str | None,
+    dataset_type: DatasetType,
+    prompt_override: str | None = None,
+    agent_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     summary = summarize_customer(record, dataset_type).model_dump()
     if language:
         summary["selected_language"] = language
@@ -334,6 +365,8 @@ def customer_payload(record: dict[str, Any], language: str | None, dataset_type:
     }
     if prompt_override:
         payload["prompt_override"] = prompt_override
+    if agent_config:
+        payload["agent_config"] = agent_config
     return payload
 
 
@@ -345,6 +378,7 @@ async def create_livekit_session(
     language: str | None = None,
     wait_until_answered: bool = False,
     prompt_override: str | None = None,
+    agent_config: dict[str, Any] | None = None,
 ) -> SessionResponse:
     if dial_phone:
         assert_customer_can_be_called(record, dataset_type)
@@ -359,11 +393,13 @@ async def create_livekit_session(
     participant_name = f"operator-{uuid.uuid4().hex[:8]}"
     selected_language = language or summary.preferred_language
     metadata = json.dumps({
-        "customer": customer_payload(record, selected_language, dataset_type, prompt_override),
+        "customer": customer_payload(record, selected_language, dataset_type, prompt_override, agent_config),
         "call_type": "phone" if dial_phone else "browser",
         "prompt_type": dataset_type,
         "language": selected_language,
+        "agent_config": agent_config or {},
     })
+    logger.info("livekit_dispatch_metadata=%s", metadata)
 
     token = (
         api.AccessToken(api_key, api_secret)
@@ -437,6 +473,7 @@ def start_agora_agent_session(
     greeting_message: str,
     name: str,
     mllm_provider: AgoraMllmProvider,
+    agent_config: dict[str, Any] | None,
 ) -> str:
     token_ttl = int(os.getenv("AGORA_TOKEN_TTL_SECONDS", "3600"))
     agent_token = generate_convo_ai_token(
@@ -456,7 +493,7 @@ def start_agora_agent_session(
             "remote_rtc_uids": [user_uid],
             "enable_string_uid": True,
             "idle_timeout": int(os.getenv("AGORA_AGENT_IDLE_TIMEOUT", "60")),
-            "mllm": agora_mllm_config(mllm_provider, instructions, greeting_message),
+            "mllm": agora_mllm_config(mllm_provider, instructions, greeting_message, agent_config),
         },
     }
     data = json.dumps(body).encode("utf-8")
@@ -486,6 +523,7 @@ async def create_agora_session(
     dataset_type: DatasetType,
     language: str | None = None,
     prompt_override: str | None = None,
+    agent_config: dict[str, Any] | None = None,
     mllm_provider: AgoraMllmProvider = "gemini",
 ) -> SessionResponse:
     if dial_phone:
@@ -502,8 +540,10 @@ async def create_agora_session(
     agent_uid = f"agent-{uuid.uuid4().hex[:8]}"
     name = f"card-agent-{uuid.uuid4().hex[:8]}"
 
-    customer_context = customer_payload(record, selected_language, dataset_type, prompt_override)
+    customer_context = customer_payload(record, selected_language, dataset_type, prompt_override, agent_config)
     instructions = agent_instructions(customer_context)
+    logger.info("agora_customer_context=%s", json.dumps(customer_context, ensure_ascii=False))
+    logger.info("agora_mllm_provider=%s agora_instructions=%s", mllm_provider, instructions)
     greeting_message = (
         f"Hello {summary.name}, I am an AI assistant calling about "
         f"{'your pre-approved credit card offer' if dataset_type == 'credit_card' else 'your credit card account'}. "
@@ -526,6 +566,7 @@ async def create_agora_session(
             greeting_message=greeting_message,
             name=name,
             mllm_provider=mllm_provider,
+            agent_config=agent_config,
         )
     except HTTPException:
         raise
@@ -573,7 +614,7 @@ def list_customers(dataset_type: DatasetType = "debt_collection") -> list[Custom
 @app.post("/api/prompt-preview", response_model=PromptPreviewResponse)
 def prompt_preview(payload: PromptPreviewRequest) -> PromptPreviewResponse:
     record = find_customer_record(payload.customer_id, payload.dataset_type)
-    prompt = agent_instructions(customer_payload(record, payload.language, payload.dataset_type))
+    prompt = agent_instructions(customer_payload(record, payload.language, payload.dataset_type, agent_config=payload.agent_config))
     return PromptPreviewResponse(prompt=prompt)
 
 
@@ -588,8 +629,8 @@ async def create_session(payload: SessionRequest) -> SessionResponse:
         payload.customer_id,
     )
     if payload.provider == "agora":
-        return await create_agora_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override, mllm_provider=payload.agora_mllm_provider)
-    return await create_livekit_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override)
+        return await create_agora_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override, agent_config=payload.agent_config, mllm_provider=payload.agora_mllm_provider)
+    return await create_livekit_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override, agent_config=payload.agent_config)
 
 
 @app.post("/api/call", response_model=SessionResponse)
@@ -603,7 +644,7 @@ async def call_customer(payload: PhoneCallRequest) -> SessionResponse:
         payload.customer_id,
     )
     if payload.provider == "agora":
-        return await create_agora_session(record, dial_phone=True, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override, mllm_provider=payload.agora_mllm_provider)
+        return await create_agora_session(record, dial_phone=True, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override, agent_config=payload.agent_config, mllm_provider=payload.agora_mllm_provider)
     return await create_livekit_session(
         record,
         dial_phone=True,
@@ -611,4 +652,5 @@ async def call_customer(payload: PhoneCallRequest) -> SessionResponse:
         language=payload.language,
         wait_until_answered=payload.wait_until_answered,
         prompt_override=payload.prompt_override,
+        agent_config=payload.agent_config,
     )
