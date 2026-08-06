@@ -145,6 +145,8 @@ function App() {
   const [lastCallMode, setLastCallMode] = useState('browser');
   const [session, setSession] = useState(null);
   const [pendingCall, setPendingCall] = useState(null);
+  const [promptDraft, setPromptDraft] = useState('');
+  const [isLoadingPrompt, setIsLoadingPrompt] = useState(false);
   const [error, setError] = useState('');
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
@@ -199,20 +201,44 @@ function App() {
     setSelectedLanguage(nextCustomer?.preferred_language || 'English');
   }
 
-  function openDebtCallModal(customer) {
+  async function openDebtCallModal(customer) {
     const rowLanguage = selectedLanguage || customer.preferred_language || 'English';
     setError('');
     setSelectedCustomerId(customer.customer_id);
+    setPromptDraft('');
+    setIsLoadingPrompt(true);
     setPendingCall({
       customer,
       language: rowLanguage,
       mode: providerCallMode(agentProvider),
     });
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/prompt-preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: customer.customer_id,
+          language: rowLanguage,
+          dataset_type: datasetType,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(body.detail || 'Could not load prompt preview.');
+      }
+      setPromptDraft(body.prompt || '');
+    } catch (caught) {
+      setError(caught.message);
+    } finally {
+      setIsLoadingPrompt(false);
+    }
   }
 
   function closeDebtCallModal() {
     if (!isStarting) {
       setPendingCall(null);
+      setPromptDraft('');
     }
   }
 
@@ -220,11 +246,12 @@ function App() {
     if (!pendingCall) {
       return;
     }
-    await startCall(pendingCall.mode, event, pendingCall.customer, pendingCall.language);
+    await startCall(pendingCall.mode, event, pendingCall.customer, pendingCall.language, promptDraft);
     setPendingCall(null);
+    setPromptDraft('');
   }
 
-  async function startCall(mode, event, customerOverride = selectedCustomer, languageOverride = selectedLanguage) {
+  async function startCall(mode, event, customerOverride = selectedCustomer, languageOverride = selectedLanguage, promptOverride = null) {
     event?.preventDefault();
     setError('');
 
@@ -249,6 +276,7 @@ function App() {
           language: languageOverride || customerOverride.preferred_language || 'English',
           dataset_type: datasetType,
           provider: agentProvider,
+          prompt_override: promptOverride,
         }),
       });
 
@@ -518,9 +546,19 @@ function App() {
               <p className="call-hint">Agora ConvoAI starts a browser audio session. Use LiveKit if you need a real phone dial-out.</p>
             )}
 
+            <label className="prompt-editor">
+              Agent prompt with dynamic customer variables
+              <textarea
+                value={isLoadingPrompt ? 'Loading generated prompt...' : promptDraft}
+                disabled={isLoadingPrompt || isStarting}
+                onChange={(event) => setPromptDraft(event.target.value)}
+                rows={12}
+              />
+            </label>
+
             <div className="actions call-modal-actions">
               <button type="button" className="light-button" onClick={closeDebtCallModal}>Cancel</button>
-              <button type="button" className="call-button" disabled={isStarting} onClick={confirmDebtCall}>
+              <button type="button" className="call-button" disabled={isStarting || isLoadingPrompt || !promptDraft.trim()} onClick={confirmDebtCall}>
                 {isStarting ? 'Starting...' : 'Start call'}
               </button>
             </div>

@@ -266,6 +266,9 @@ def render_credit_card_prompt(customer: dict, language: str) -> str:
 
 
 def agent_instructions(customer: dict) -> str:
+    if customer.get("prompt_override"):
+        return customer["prompt_override"]
+
     language = customer.get("language") or customer.get("summary", {}).get("preferred_language") or "English"
     prompt_type = customer.get("prompt_type") or customer.get("summary", {}).get("dataset_type") or "debt_collection"
 

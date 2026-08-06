@@ -58,6 +58,17 @@ class SessionRequest(BaseModel):
     language: str | None = Field(default=None, max_length=80)
     dataset_type: DatasetType = "debt_collection"
     provider: AgentProvider = "livekit"
+    prompt_override: str | None = None
+
+
+class PromptPreviewRequest(BaseModel):
+    customer_id: str = Field(..., min_length=1, max_length=80)
+    language: str | None = Field(default=None, max_length=80)
+    dataset_type: DatasetType = "debt_collection"
+
+
+class PromptPreviewResponse(BaseModel):
+    prompt: str
 
 
 class PhoneCallRequest(SessionRequest):
@@ -229,16 +240,19 @@ def assert_customer_can_be_called(record: dict[str, Any], dataset_type: DatasetT
         raise HTTPException(status_code=409, detail="Cannot call customer: " + ", ".join(blocked_reasons))
 
 
-def customer_payload(record: dict[str, Any], language: str | None, dataset_type: DatasetType) -> dict[str, Any]:
+def customer_payload(record: dict[str, Any], language: str | None, dataset_type: DatasetType, prompt_override: str | None = None) -> dict[str, Any]:
     summary = summarize_customer(record, dataset_type).model_dump()
     if language:
         summary["selected_language"] = language
-    return {
+    payload = {
         "summary": summary,
         "record": record,
         "language": language or summary.get("preferred_language"),
         "prompt_type": dataset_type,
     }
+    if prompt_override:
+        payload["prompt_override"] = prompt_override
+    return payload
 
 
 async def create_livekit_session(
@@ -248,6 +262,7 @@ async def create_livekit_session(
     dataset_type: DatasetType,
     language: str | None = None,
     wait_until_answered: bool = False,
+    prompt_override: str | None = None,
 ) -> SessionResponse:
     if dial_phone:
         assert_customer_can_be_called(record, dataset_type)
@@ -262,7 +277,7 @@ async def create_livekit_session(
     participant_name = f"operator-{uuid.uuid4().hex[:8]}"
     selected_language = language or summary.preferred_language
     metadata = json.dumps({
-        "customer": customer_payload(record, selected_language, dataset_type),
+        "customer": customer_payload(record, selected_language, dataset_type, prompt_override),
         "call_type": "phone" if dial_phone else "browser",
         "prompt_type": dataset_type,
         "language": selected_language,
@@ -410,6 +425,7 @@ async def create_agora_session(
     dial_phone: bool,
     dataset_type: DatasetType,
     language: str | None = None,
+    prompt_override: str | None = None,
 ) -> SessionResponse:
     if dial_phone:
         raise HTTPException(status_code=400, detail="Agora provider currently supports browser calls only. Choose LiveKit for phone dial-out.")
@@ -425,7 +441,7 @@ async def create_agora_session(
     agent_uid = f"agent-{uuid.uuid4().hex[:8]}"
     name = f"card-agent-{uuid.uuid4().hex[:8]}"
 
-    customer_context = customer_payload(record, selected_language, dataset_type)
+    customer_context = customer_payload(record, selected_language, dataset_type, prompt_override)
     instructions = agent_instructions(customer_context)
     greeting_message = (
         f"Hello {summary.name}, I am an AI assistant calling about "
@@ -491,6 +507,13 @@ def list_customers(dataset_type: DatasetType = "debt_collection") -> list[Custom
     return [summarize_customer(record, dataset_type) for record in all_customer_records(dataset_type)]
 
 
+@app.post("/api/prompt-preview", response_model=PromptPreviewResponse)
+def prompt_preview(payload: PromptPreviewRequest) -> PromptPreviewResponse:
+    record = find_customer_record(payload.customer_id, payload.dataset_type)
+    prompt = agent_instructions(customer_payload(record, payload.language, payload.dataset_type))
+    return PromptPreviewResponse(prompt=prompt)
+
+
 @app.post("/api/session", response_model=SessionResponse)
 async def create_session(payload: SessionRequest) -> SessionResponse:
     record = find_customer_record(payload.customer_id, payload.dataset_type)
@@ -501,8 +524,8 @@ async def create_session(payload: SessionRequest) -> SessionResponse:
         payload.customer_id,
     )
     if payload.provider == "agora":
-        return await create_agora_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language)
-    return await create_livekit_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language)
+        return await create_agora_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override)
+    return await create_livekit_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override)
 
 
 @app.post("/api/call", response_model=SessionResponse)
@@ -515,11 +538,12 @@ async def call_customer(payload: PhoneCallRequest) -> SessionResponse:
         payload.customer_id,
     )
     if payload.provider == "agora":
-        return await create_agora_session(record, dial_phone=True, dataset_type=payload.dataset_type, language=payload.language)
+        return await create_agora_session(record, dial_phone=True, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override)
     return await create_livekit_session(
         record,
         dial_phone=True,
         dataset_type=payload.dataset_type,
         language=payload.language,
         wait_until_answered=payload.wait_until_answered,
+        prompt_override=payload.prompt_override,
     )

@@ -440,6 +440,21 @@ button:disabled {
   margin-top: 4px;
 }
 
+.prompt-editor {
+  gap: 10px;
+}
+
+.prompt-editor textarea {
+  min-height: 260px;
+  resize: vertical;
+  border-radius: 18px;
+  color: #172033;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .call-page {
   grid-template-columns: minmax(280px, 720px);
   place-content: center;
