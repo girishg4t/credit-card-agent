@@ -16,6 +16,10 @@ const providerOptions = [
   { value: 'livekit', label: 'LiveKit' },
   { value: 'agora', label: 'Agora ConvoAI' },
 ];
+const agoraMllmOptions = [
+  { value: 'gemini', label: 'Gemini Live' },
+  { value: 'openai', label: 'OpenAI Realtime' },
+];
 
 function customerCanDial(customer) {
   return Boolean(customer) && customer.allow_voice_calls && !customer.do_not_call && !customer.contact_restricted && Boolean(customer.phone);
@@ -140,6 +144,7 @@ function App() {
   const [customers, setCustomers] = useState([]);
   const [datasetType, setDatasetType] = useState('debt_collection');
   const [agentProvider, setAgentProvider] = useState('livekit');
+  const [agoraMllmProvider, setAgoraMllmProvider] = useState('gemini');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [lastCallMode, setLastCallMode] = useState('browser');
@@ -279,6 +284,7 @@ function App() {
           language: languageOverride || customerOverride.preferred_language || 'English',
           dataset_type: datasetType,
           provider: agentProvider,
+          agora_mllm_provider: agoraMllmProvider,
           prompt_override: promptOverride,
         }),
       });
@@ -305,6 +311,7 @@ function App() {
             <h1>{session.phone_call_started ? 'Calling' : 'Testing'} {session.customer.name}</h1>
             <p className="muted">Room: {session.room_name}</p>
             <p className="muted">Language: {session.language || selectedLanguage}</p>
+            {session.provider === 'agora' && <p className="muted">Agora model: {session.agora_mllm_provider === 'openai' ? 'OpenAI Realtime' : 'Gemini Live'}</p>}
             {session.provider === 'agora' && <p className="muted">Agent ID: {session.agora_agent_id || session.agora_agent_uid}</p>}
             {session.phone_call_started && <p className="muted">Dialed: {session.customer.phone}</p>}
           </div>
@@ -381,6 +388,17 @@ function App() {
               ))}
             </select>
           </label>
+
+          {agentProvider === 'agora' && (
+            <label>
+              Agora model
+              <select value={agoraMllmProvider} onChange={(event) => setAgoraMllmProvider(event.target.value)}>
+                {agoraMllmOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label>
             Call type
@@ -551,6 +569,7 @@ function App() {
               <div><strong>Customer ID</strong><span>{pendingCall.customer.customer_id}</span></div>
               <div><strong>Phone</strong><span>{pendingCall.customer.phone || 'Missing'}</span></div>
               <div><strong>Provider</strong><span>{agentProvider === 'agora' ? 'Agora ConvoAI' : 'LiveKit'}</span></div>
+              {agentProvider === 'agora' && <div><strong>Agora model</strong><span>{agoraMllmProvider === 'gemini' ? 'Gemini Live' : 'OpenAI Realtime'}</span></div>}
               <div><strong>Call mode</strong><span>{pendingCall.mode === 'phone' ? 'Phone call' : 'Browser conversation'}</span></div>
               <div><strong>Language</strong><span>{pendingCall.language}</span></div>
               <div><strong>Scenario</strong><span>{pendingCall.customer.scenario || '-'}</span></div>

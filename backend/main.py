@@ -26,6 +26,7 @@ logger = logging.getLogger("credit-card-agent")
 AGENT_NAME = "credit-card-sales-agent"
 DatasetType = Literal["debt_collection", "credit_card"]
 AgentProvider = Literal["livekit", "agora"]
+AgoraMllmProvider = Literal["openai", "gemini"]
 DATASET_PATHS: dict[DatasetType, str] = {
     "debt_collection": os.getenv("DEBT_COLLECTION_DATA_PATH", os.getenv("CUSTOMER_DATA_PATH", "debt_collection_100_customers.json")),
     "credit_card": os.getenv("CREDIT_CARD_DATA_PATH", "customers.json"),
@@ -59,6 +60,7 @@ class SessionRequest(BaseModel):
     language: str | None = Field(default=None, max_length=80)
     dataset_type: DatasetType = "debt_collection"
     provider: AgentProvider = "livekit"
+    agora_mllm_provider: AgoraMllmProvider = "gemini"
     prompt_override: str | None = None
 
 
@@ -90,6 +92,7 @@ class SessionResponse(BaseModel):
     agora_uid: str | None = None
     agora_agent_uid: str | None = None
     agora_agent_id: str | None = None
+    agora_mllm_provider: AgoraMllmProvider | None = None
 
 
 def require_env(name: str) -> str:
@@ -97,6 +100,82 @@ def require_env(name: str) -> str:
     if not value:
         raise HTTPException(status_code=500, detail=f"Missing required environment variable: {name}")
     return value
+
+
+def require_any_env(*names: str) -> str:
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    joined_names = " or ".join(names)
+    raise HTTPException(status_code=500, detail=f"Missing required environment variable: {joined_names}")
+
+
+def agora_mllm_config(provider: AgoraMllmProvider, instructions: str, greeting_message: str) -> dict[str, Any]:
+    if provider == "openai":
+        return {
+            "enable": True,
+            "url": os.getenv("OPENAI_REALTIME_URL", "wss://api.openai.com/v1/realtime"),
+            "api_key": require_env("OPENAI_API_KEY"),
+            "params": {
+                "model": os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime"),
+                "voice": os.getenv("OPENAI_REALTIME_VOICE", "alloy"),
+                "instructions": instructions,
+                "input_audio_transcription": {
+                    "model": os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"),
+                },
+            },
+            "turn_detection": {
+                "mode": "server_vad",
+                "server_vad_config": {
+                    "prefix_padding_ms": 800,
+                    "silence_duration_ms": 640,
+                    "threshold": 0.5,
+                },
+            },
+            "greeting_message": greeting_message,
+            "input_modalities": ["audio", "text"],
+            "output_modalities": ["text", "audio"],
+            "vendor": "openai",
+        }
+
+    gemini_model = os.getenv("AGORA_GEMINI_MODEL", os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview"))
+    gemini_voice = os.getenv("AGORA_GEMINI_VOICE", os.getenv("GEMINI_LIVE_VOICE", "Charon"))
+    gemini_url = os.getenv(
+        "AGORA_GEMINI_URL",
+        "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent",
+    )
+    return {
+        "enable": True,
+        "url": gemini_url,
+        "api_key": require_any_env("GOOGLE_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        "params": {
+            "model": gemini_model,
+            "voice": gemini_voice,
+            "instructions": instructions,
+            "affective_dialog": os.getenv("AGORA_GEMINI_AFFECTIVE_DIALOG", "false").lower() == "true",
+            "proactive_audio": os.getenv("AGORA_GEMINI_PROACTIVE_AUDIO", "false").lower() == "true",
+            "transcribe_agent": True,
+            "transcribe_user": True,
+            "http_options": {
+                "api_version": os.getenv("AGORA_GEMINI_API_VERSION", "v1beta"),
+            },
+        },
+        "turn_detection": {
+            "mode": "server_vad",
+            "server_vad_config": {
+                "prefix_padding_ms": 800,
+                "silence_duration_ms": 640,
+                "start_of_speech_sensitivity": "START_SENSITIVITY_HIGH",
+                "end_of_speech_sensitivity": "END_SENSITIVITY_HIGH",
+            },
+        },
+        "greeting_message": greeting_message,
+        "failure_message": "Sorry, I encountered an issue. Please try again.",
+        "input_modalities": ["audio"],
+        "output_modalities": ["audio"],
+        "vendor": "gemini",
+    }
 
 
 def dataset_path_for(dataset_type: DatasetType) -> str:
@@ -356,6 +435,7 @@ def start_agora_agent_session(
     instructions: str,
     greeting_message: str,
     name: str,
+    mllm_provider: AgoraMllmProvider,
 ) -> str:
     token_ttl = int(os.getenv("AGORA_TOKEN_TTL_SECONDS", "3600"))
     agent_token = generate_convo_ai_token(
@@ -375,31 +455,7 @@ def start_agora_agent_session(
             "remote_rtc_uids": [user_uid],
             "enable_string_uid": True,
             "idle_timeout": int(os.getenv("AGORA_AGENT_IDLE_TIMEOUT", "60")),
-            "mllm": {
-                "enable": True,
-                "url": os.getenv("OPENAI_REALTIME_URL", "wss://api.openai.com/v1/realtime"),
-                "api_key": require_env("OPENAI_API_KEY"),
-                "params": {
-                    "model": os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime"),
-                    "voice": os.getenv("OPENAI_REALTIME_VOICE", "alloy"),
-                    "instructions": instructions,
-                    "input_audio_transcription": {
-                        "model": os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"),
-                    },
-                },
-                "turn_detection": {
-                    "mode": "server_vad",
-                    "server_vad_config": {
-                        "prefix_padding_ms": 800,
-                        "silence_duration_ms": 640,
-                        "threshold": 0.5,
-                    },
-                },
-                "greeting_message": greeting_message,
-                "input_modalities": ["audio", "text"],
-                "output_modalities": ["text", "audio"],
-                "vendor": "openai",
-            },
+            "mllm": agora_mllm_config(mllm_provider, instructions, greeting_message),
         },
     }
     data = json.dumps(body).encode("utf-8")
@@ -429,6 +485,7 @@ async def create_agora_session(
     dataset_type: DatasetType,
     language: str | None = None,
     prompt_override: str | None = None,
+    mllm_provider: AgoraMllmProvider = "gemini",
 ) -> SessionResponse:
     if dial_phone:
         raise HTTPException(status_code=400, detail="Agora provider currently supports browser calls only. Choose LiveKit for phone dial-out.")
@@ -467,6 +524,7 @@ async def create_agora_session(
             instructions=instructions,
             greeting_message=greeting_message,
             name=name,
+            mllm_provider=mllm_provider,
         )
     except HTTPException:
         raise
@@ -486,6 +544,7 @@ async def create_agora_session(
         agora_uid=user_uid,
         agora_agent_uid=agent_uid,
         agora_agent_id=agent_id,
+        agora_mllm_provider=mllm_provider,
     )
 
 
@@ -521,13 +580,14 @@ def prompt_preview(payload: PromptPreviewRequest) -> PromptPreviewResponse:
 async def create_session(payload: SessionRequest) -> SessionResponse:
     record = find_customer_record(payload.customer_id, payload.dataset_type)
     logger.info(
-        "api_provider=%s endpoint=/api/session mode=browser dataset=%s customer_id=%s",
+        "api_provider=%s agora_mllm_provider=%s endpoint=/api/session mode=browser dataset=%s customer_id=%s",
         payload.provider,
+        payload.agora_mllm_provider if payload.provider == "agora" else "n/a",
         payload.dataset_type,
         payload.customer_id,
     )
     if payload.provider == "agora":
-        return await create_agora_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override)
+        return await create_agora_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override, mllm_provider=payload.agora_mllm_provider)
     return await create_livekit_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override)
 
 
@@ -535,13 +595,14 @@ async def create_session(payload: SessionRequest) -> SessionResponse:
 async def call_customer(payload: PhoneCallRequest) -> SessionResponse:
     record = find_customer_record(payload.customer_id, payload.dataset_type)
     logger.info(
-        "api_provider=%s endpoint=/api/call mode=phone dataset=%s customer_id=%s",
+        "api_provider=%s agora_mllm_provider=%s endpoint=/api/call mode=phone dataset=%s customer_id=%s",
         payload.provider,
+        payload.agora_mllm_provider if payload.provider == "agora" else "n/a",
         payload.dataset_type,
         payload.customer_id,
     )
     if payload.provider == "agora":
-        return await create_agora_session(record, dial_phone=True, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override)
+        return await create_agora_session(record, dial_phone=True, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override, mllm_provider=payload.agora_mllm_provider)
     return await create_livekit_session(
         record,
         dial_phone=True,
