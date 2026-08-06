@@ -55,6 +55,7 @@ start_process() {
     return
   fi
 
+  : >"$log_file"
   (cd "$ROOT_DIR" && exec "$@") >"$log_file" 2>&1 &
   echo $! >"$pid_file"
   echo "started $name: pid $(cat "$pid_file"), log $log_file"
@@ -67,7 +68,7 @@ start_process backend-api \
   "$ROOT_DIR/.venv/bin/python" -m uvicorn backend.main:app --host 0.0.0.0 --port "$BACKEND_PORT"
 
 start_process livekit-agent \
-  "$ROOT_DIR/.venv/bin/python" backend/agent.py dev
+  "$ROOT_DIR/.venv/bin/python" backend/agent.py start
 
 start_process frontend \
   npm --prefix "$ROOT_DIR/frontend" run dev -- --host 0.0.0.0 --port "$FRONTEND_PORT"

@@ -79,7 +79,7 @@ uvicorn backend.main:app --reload --port 8000
 
 ```bash
 source .venv/bin/activate
-python backend/agent.py dev
+python backend/agent.py start
 ```
 
 3. Frontend:
