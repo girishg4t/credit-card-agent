@@ -5,13 +5,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "vite": "latest",
+    "@livekit/components-react": "latest",
+    "@livekit/components-styles": "latest",
+    "@vitejs/plugin-react": "^6.0.5",
+    "agora-rtc-sdk-ng": "^4.24.7",
+    "livekit-client": "latest",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "livekit-client": "latest",
-    "@livekit/components-react": "latest",
-    "@livekit/components-styles": "latest"
-  },
-  "devDependencies": {}
+    "vite": "^4.5.14"
+  }
 }
