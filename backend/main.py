@@ -16,6 +16,12 @@ from livekit import api
 from pydantic import BaseModel, Field
 
 from backend.agent import agent_instructions
+from backend.prompt_editor import (
+    PromptConflictError,
+    generate_persona_system_prompt,
+    read_persona_prompts,
+    update_persona_prompt,
+)
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 load_dotenv(dotenv_path=os.path.join(REPO_ROOT, ".env"))
@@ -74,6 +80,15 @@ class PromptPreviewResponse(BaseModel):
 
 class PhoneCallRequest(SessionRequest):
     wait_until_answered: bool = False
+
+
+class PersonaPromptUpdate(BaseModel):
+    expected_revision: str = Field(..., min_length=1, max_length=128)
+    content: str = Field(..., min_length=1, max_length=20000)
+
+
+class PersonaPromptGenerate(BaseModel):
+    content: str = Field(..., min_length=1, max_length=20000)
 
 
 class SessionResponse(BaseModel):

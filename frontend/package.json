@@ -7,7 +7,7 @@
   "dependencies": {
     "@livekit/components-react": "latest",
     "@livekit/components-styles": "latest",
-    "@vitejs/plugin-react": "^6.0.5",
+    "@vitejs/plugin-react": "^4.3.4",
     "agora-rtc-sdk-ng": "^4.24.7",
     "livekit-client": "latest",
     "react": "18.3.1",

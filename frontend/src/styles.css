@@ -298,6 +298,21 @@ button:disabled {
   font-weight: 850;
 }
 
+.debt-list-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-prompt-button {
+  width: auto;
+  margin-top: 0;
+  border-radius: 12px;
+  padding: 9px 13px;
+  font-size: 0.82rem;
+}
+
 .debt-table-wrap {
   overflow-x: auto;
 }
@@ -712,5 +727,9 @@ button:disabled {
 
   .call-modal-header {
     align-items: flex-start;
+  }
+
+  .prompt-editor-fields {
+    grid-template-columns: 1fr;
   }
 }
