@@ -36,6 +36,7 @@ class CustomerSummary(BaseModel):
 
 class SessionRequest(BaseModel):
     customer_id: str = Field(..., min_length=1, max_length=80)
+    language: str | None = Field(default=None, max_length=80)
 
 
 class PhoneCallRequest(SessionRequest):
@@ -48,6 +49,7 @@ class SessionResponse(BaseModel):
     room_name: str
     participant_name: str
     customer: CustomerSummary
+    language: str | None = None
     phone_call_started: bool = False
 
 
@@ -140,12 +142,20 @@ def assert_customer_can_be_called(record: dict[str, Any]) -> None:
         raise HTTPException(status_code=409, detail="Cannot call customer: " + ", ".join(blocked_reasons))
 
 
-def customer_payload(record: dict[str, Any]) -> dict[str, Any]:
+def customer_payload(record: dict[str, Any], language: str | None) -> dict[str, Any]:
     summary = summarize_customer(record).model_dump()
-    return {"summary": summary, "record": record}
+    if language:
+        summary["selected_language"] = language
+    return {"summary": summary, "record": record, "language": language or summary.get("preferred_language")}
 
 
-async def create_livekit_session(record: dict[str, Any], *, dial_phone: bool, wait_until_answered: bool = False) -> SessionResponse:
+async def create_livekit_session(
+    record: dict[str, Any],
+    *,
+    dial_phone: bool,
+    language: str | None = None,
+    wait_until_answered: bool = False,
+) -> SessionResponse:
     if dial_phone:
         assert_customer_can_be_called(record)
 
@@ -156,7 +166,12 @@ async def create_livekit_session(record: dict[str, Any], *, dial_phone: bool, wa
 
     room_name = f"debt-collection-{summary.customer_id.lower()}-{uuid.uuid4().hex[:8]}"
     participant_name = f"operator-{uuid.uuid4().hex[:8]}"
-    metadata = json.dumps({"customer": customer_payload(record), "call_type": "phone" if dial_phone else "browser"})
+    selected_language = language or summary.preferred_language
+    metadata = json.dumps({
+        "customer": customer_payload(record, selected_language),
+        "call_type": "phone" if dial_phone else "browser",
+        "language": selected_language,
+    })
 
     token = (
         api.AccessToken(api_key, api_secret)
@@ -212,6 +227,7 @@ async def create_livekit_session(record: dict[str, Any], *, dial_phone: bool, wa
         room_name=room_name,
         participant_name=participant_name,
         customer=summary,
+        language=selected_language,
         phone_call_started=dial_phone,
     )
 
@@ -240,7 +256,7 @@ def list_customers() -> list[CustomerSummary]:
 @app.post("/api/session", response_model=SessionResponse)
 async def create_session(payload: SessionRequest) -> SessionResponse:
     record = find_customer_record(payload.customer_id)
-    return await create_livekit_session(record, dial_phone=False)
+    return await create_livekit_session(record, dial_phone=False, language=payload.language)
 
 
 @app.post("/api/call", response_model=SessionResponse)
@@ -249,5 +265,6 @@ async def call_customer(payload: PhoneCallRequest) -> SessionResponse:
     return await create_livekit_session(
         record,
         dial_phone=True,
+        language=payload.language,
         wait_until_answered=payload.wait_until_answered,
     )

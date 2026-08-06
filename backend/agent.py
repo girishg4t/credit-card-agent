@@ -12,8 +12,11 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 def agent_instructions(customer: dict) -> str:
     customer_json = json.dumps(customer, indent=2)
+    language = customer.get("language") or customer.get("summary", {}).get("preferred_language") or "English"
     return f"""
 You are a professional, empathetic AI collections assistant for a credit card company.
+
+Use this conversation language unless the customer asks to switch: {language}.
 
 Customer data supplied by the business:
 {customer_json}
@@ -40,6 +43,7 @@ async def entrypoint(ctx: JobContext) -> None:
     dispatch_metadata = json.loads(ctx.job.metadata or "{}")
     customer = dispatch_metadata.get("customer", {})
     summary = customer.get("summary", {})
+    language = dispatch_metadata.get("language") or customer.get("language") or summary.get("preferred_language") or "English"
 
     await ctx.connect()
 
@@ -61,7 +65,7 @@ async def entrypoint(ctx: JobContext) -> None:
         instructions=(
             f"The customer participant {participant.identity} just joined. Start speaking now. "
             f"Greet {customer_name}, disclose that you are an AI assistant calling about their credit card account, "
-            "ask if now is a good time, then pause for their response."
+            f"speak in {language}, ask if now is a good time, then pause for their response."
         )
     )
 

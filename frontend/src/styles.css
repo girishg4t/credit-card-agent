@@ -52,6 +52,13 @@ h1 {
   letter-spacing: -0.07em;
 }
 
+h2 {
+  margin: 0;
+  color: #111827;
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+  letter-spacing: -0.04em;
+}
+
 .hero p:not(.eyebrow) {
   max-width: 520px;
   color: #4b5870;
@@ -137,10 +144,57 @@ button:disabled {
   background: #0f766e;
 }
 
+.light-button {
+  color: #172033;
+  background: #e8edf5;
+}
+
+.light-button:hover:not(:disabled) {
+  background: #dbe3ee;
+}
+
 .actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+
+.call-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.call-actions button,
+.actions button {
+  margin-top: 0;
+}
+
+.call-setup {
+  display: grid;
+  gap: 18px;
+}
+
+.setup-header,
+.call-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.count-pill {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 9px 12px;
+  color: #244166;
+  background: #eef6ff;
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.selector-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr;
+  gap: 14px;
 }
 
 .customer-summary {
@@ -256,7 +310,14 @@ button:disabled {
   }
 
   .actions,
+  .call-actions,
+  .selector-grid,
   .customer-summary {
     grid-template-columns: 1fr;
+  }
+
+  .setup-header,
+  .call-header {
+    display: grid;
   }
 }
