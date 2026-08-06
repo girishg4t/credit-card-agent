@@ -152,8 +152,11 @@ function App() {
   const [isStarting, setIsStarting] = useState(false);
 
   const selectedCustomer = customers.find((customer) => customer.customer_id === selectedCustomerId);
-  const canStartCall = !isStarting && !isLoadingCustomers && Boolean(selectedCustomer);
   const isDebtList = datasetType === 'debt_collection';
+  const isCreditCardList = datasetType === 'credit_card';
+  const isListPage = datasetType === 'debt_collection' || datasetType === 'credit_card';
+  const listTitle = isDebtList ? 'Debt queue' : 'Credit card sales queue';
+  const listSubtitle = isDebtList ? 'Customers ready for agent calls' : 'Customers ready for card offer calls';
 
   useEffect(() => {
     document.title = session ? `Live call: ${session.customer.name}` : 'Credit Card Voice Agent';
@@ -201,7 +204,7 @@ function App() {
     setSelectedLanguage(nextCustomer?.preferred_language || 'English');
   }
 
-  async function openDebtCallModal(customer) {
+  async function openCallModal(customer) {
     const rowLanguage = selectedLanguage || customer.preferred_language || 'English';
     setError('');
     setSelectedCustomerId(customer.customer_id);
@@ -235,14 +238,14 @@ function App() {
     }
   }
 
-  function closeDebtCallModal() {
+  function closeCallModal() {
     if (!isStarting) {
       setPendingCall(null);
       setPromptDraft('');
     }
   }
 
-  async function confirmDebtCall(event) {
+  async function confirmCall(event) {
     if (!pendingCall) {
       return;
     }
@@ -351,8 +354,8 @@ function App() {
   }
 
   return (
-    <main className={isDebtList ? 'page debt-page' : 'page'}>
-      <section className={isDebtList ? 'hero debt-hero' : 'hero'}>
+    <main className={isListPage ? 'page debt-page' : 'page'}>
+      <section className={isListPage ? 'hero debt-hero' : 'hero'}>
         <p className="eyebrow">AI voice agent</p>
         <h1>Credit card calls with customer context</h1>
         <p>
@@ -369,7 +372,7 @@ function App() {
           <span className="count-pill">{isLoadingCustomers ? 'Loading...' : `${customers.length} customers`}</span>
         </div>
 
-        <div className={isDebtList ? 'selector-grid top-controls debt-control-row' : 'selector-grid top-controls'}>
+        <div className={isListPage ? 'selector-grid top-controls debt-control-row' : 'selector-grid top-controls'}>
           <label>
             Agent provider
             <select value={agentProvider} onChange={(event) => setAgentProvider(event.target.value)}>
@@ -388,7 +391,7 @@ function App() {
             </select>
           </label>
 
-          {isDebtList && (
+          {isListPage && (
             <label>
               Language
               <select
@@ -404,9 +407,9 @@ function App() {
           )}
         </div>
 
-        {!isDebtList && (
+        {!isListPage && (
         <div className="selector-grid">
-          {!isDebtList && (
+          {!isListPage && (
             <label>
               Customer
               <select
@@ -439,12 +442,12 @@ function App() {
         </div>
         )}
 
-        {isDebtList && (
-          <section className="debt-list" aria-label="Debt collection customer list">
+        {isListPage && (
+          <section className="debt-list" aria-label={`${isDebtList ? 'Debt collection' : 'Credit card sales'} customer list`}>
             <div className="debt-list-header">
               <div>
-                <p className="eyebrow">Debt queue</p>
-                <h3>Customers ready for agent calls</h3>
+                <p className="eyebrow">{listTitle}</p>
+                <h3>{listSubtitle}</h3>
               </div>
               <span>{isLoadingCustomers ? 'Loading customers...' : `${customers.length} customers`}</span>
             </div>
@@ -454,9 +457,10 @@ function App() {
                 <thead>
                   <tr>
                     <th>Customer</th>
-                    <th>Scenario</th>
-                    <th>Outstanding</th>
-                    <th>DPD</th>
+                    <th>{isDebtList ? 'Scenario' : 'Recommended card'}</th>
+                    <th>{isDebtList ? 'Outstanding' : 'Offered limit'}</th>
+                    <th>{isDebtList ? 'DPD' : 'Annual fee'}</th>
+                    {isCreditCardList && <th>Match score</th>}
                     <th>Language</th>
                     <th>Status</th>
                     <th>Actions</th>
@@ -472,16 +476,17 @@ function App() {
                           <strong>{customer.name}</strong>
                           <span>{customer.customer_id}</span>
                         </td>
-                        <td data-label="Scenario">{customer.scenario || '-'}</td>
-                        <td data-label="Outstanding">INR {customer.outstanding_amount ?? '-'}</td>
-                        <td data-label="DPD">{customer.days_past_due ?? '-'}</td>
+                        <td data-label={isDebtList ? 'Scenario' : 'Recommended card'}>{isDebtList ? (customer.scenario || '-') : (customer.recommended_card || '-')}</td>
+                        <td data-label={isDebtList ? 'Outstanding' : 'Offered limit'}>INR {isDebtList ? (customer.outstanding_amount ?? '-') : (customer.offered_credit_limit ?? '-')}</td>
+                        <td data-label={isDebtList ? 'DPD' : 'Annual fee'}>{isDebtList ? (customer.days_past_due ?? '-') : `INR ${customer.annual_fee ?? '-'}`}</td>
+                        {isCreditCardList && <td data-label="Match score">{customer.match_score ?? '-'}</td>}
                         <td data-label="Language">{rowLanguage}</td>
                         <td data-label="Status">
                           <span className={canDial ? 'status-pill clear' : 'status-pill blocked'}>{canDial ? 'Callable' : 'Restricted'}</span>
                         </td>
                         <td data-label="Actions">
                           <div className="row-actions">
-                            <button type="button" className="call-button" disabled={isStarting} onClick={() => openDebtCallModal(customer)}>
+                            <button type="button" className="call-button" disabled={isStarting} onClick={() => openCallModal(customer)}>
                               Call customer
                             </button>
                           </div>
@@ -495,7 +500,7 @@ function App() {
           </section>
         )}
 
-        {!isDebtList && selectedCustomer && (
+        {!isListPage && selectedCustomer && (
           <section className="customer-summary">
             <div><strong>Phone</strong><span>{selectedCustomer.phone || 'Missing'}</span></div>
             <div><strong>City</strong><span>{selectedCustomer.city || 'Unknown'}</span></div>
@@ -513,18 +518,18 @@ function App() {
           </section>
         )}
 
-        {!isDebtList && selectedCustomer && (selectedCustomer.do_not_call || selectedCustomer.contact_restricted || !selectedCustomer.allow_voice_calls) && (
+        {!isListPage && selectedCustomer && (selectedCustomer.do_not_call || selectedCustomer.contact_restricted || !selectedCustomer.allow_voice_calls) && (
           <p className="warning">This customer is restricted for voice calls. Phone dial-out will be blocked by the backend.</p>
         )}
 
         {error && <p className="error">{error}</p>}
 
-        {!isDebtList && (
+        {!isListPage && (
           <div className="actions">
-            <button type="button" disabled={!canStartCall} onClick={(event) => startCall('browser', event)}>
+            <button type="button" disabled={isStarting || isLoadingCustomers || !selectedCustomer} onClick={(event) => startCall('browser', event)}>
               {isStarting ? 'Starting...' : 'Test in browser'}
             </button>
-            <button type="button" className="call-button" disabled={!canStartCall || agentProvider === 'agora'} onClick={(event) => startCall('phone', event)}>
+            <button type="button" className="call-button" disabled={isStarting || isLoadingCustomers || !selectedCustomer || agentProvider === 'agora'} onClick={(event) => startCall('phone', event)}>
               {isStarting ? 'Dialing...' : 'Make phone call'}
             </button>
           </div>
@@ -532,14 +537,14 @@ function App() {
       </form>
 
       {pendingCall && (
-        <div className="modal-backdrop" role="presentation" onClick={closeDebtCallModal}>
+        <div className="modal-backdrop" role="presentation" onClick={closeCallModal}>
           <section className="call-modal" role="dialog" aria-modal="true" aria-labelledby="call-modal-title" onClick={(event) => event.stopPropagation()}>
             <div className="call-modal-header">
               <div>
                 <p className="eyebrow">Confirm call</p>
                 <h2 id="call-modal-title">{pendingCall.customer.name}</h2>
               </div>
-              <button type="button" className="icon-button" onClick={closeDebtCallModal} aria-label="Close call details">x</button>
+              <button type="button" className="icon-button" onClick={closeCallModal} aria-label="Close call details">x</button>
             </div>
 
             <section className="customer-summary modal-summary">
@@ -549,9 +554,13 @@ function App() {
               <div><strong>Call mode</strong><span>{pendingCall.mode === 'phone' ? 'Phone call' : 'Browser conversation'}</span></div>
               <div><strong>Language</strong><span>{pendingCall.language}</span></div>
               <div><strong>Scenario</strong><span>{pendingCall.customer.scenario || '-'}</span></div>
-              <div><strong>Outstanding</strong><span>INR {pendingCall.customer.outstanding_amount ?? '-'}</span></div>
-              <div><strong>Minimum due</strong><span>INR {pendingCall.customer.minimum_due ?? '-'}</span></div>
-              <div><strong>DPD</strong><span>{pendingCall.customer.days_past_due ?? '-'}</span></div>
+              {pendingCall.customer.dataset_type === 'debt_collection' && <div><strong>Outstanding</strong><span>INR {pendingCall.customer.outstanding_amount ?? '-'}</span></div>}
+              {pendingCall.customer.dataset_type === 'debt_collection' && <div><strong>Minimum due</strong><span>INR {pendingCall.customer.minimum_due ?? '-'}</span></div>}
+              {pendingCall.customer.dataset_type === 'debt_collection' && <div><strong>DPD</strong><span>{pendingCall.customer.days_past_due ?? '-'}</span></div>}
+              {pendingCall.customer.dataset_type === 'credit_card' && <div><strong>Recommended card</strong><span>{pendingCall.customer.recommended_card || '-'}</span></div>}
+              {pendingCall.customer.dataset_type === 'credit_card' && <div><strong>Offered limit</strong><span>INR {pendingCall.customer.offered_credit_limit ?? '-'}</span></div>}
+              {pendingCall.customer.dataset_type === 'credit_card' && <div><strong>Annual fee</strong><span>INR {pendingCall.customer.annual_fee ?? '-'}</span></div>}
+              {pendingCall.customer.dataset_type === 'credit_card' && <div><strong>Match score</strong><span>{pendingCall.customer.match_score ?? '-'}</span></div>}
               <div><strong>Status</strong><span>{customerCanDial(pendingCall.customer) ? 'Callable' : 'Restricted for phone dial-out'}</span></div>
             </section>
 
@@ -570,8 +579,8 @@ function App() {
             </label>
 
             <div className="actions call-modal-actions">
-              <button type="button" className="light-button" onClick={closeDebtCallModal}>Cancel</button>
-              <button type="button" className="call-button" disabled={isStarting || isLoadingPrompt || !promptDraft.trim()} onClick={confirmDebtCall}>
+              <button type="button" className="light-button" onClick={closeCallModal}>Cancel</button>
+              <button type="button" className="call-button" disabled={isStarting || isLoadingPrompt || !promptDraft.trim()} onClick={confirmCall}>
                 {isStarting ? 'Starting...' : 'Start call'}
               </button>
             </div>
