@@ -6,17 +6,6 @@ import './styles.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-const initialCustomer = {
-  name: 'Priya Sharma',
-  phone: '+1 555 0134',
-  city: 'San Jose',
-  credit_score_band: '720-760',
-  current_card: 'Basic cashback card',
-  annual_income_band: '$90k-$120k',
-  preferred_benefit: 'travel rewards',
-  notes: 'Interested in airport lounge access and no foreign transaction fees.',
-};
-
 function ParticipantsBadge() {
   const participants = useParticipants();
   const agentOnline = participants.some((participant) => participant.identity.includes('agent'));
@@ -30,29 +19,59 @@ function ParticipantsBadge() {
 }
 
 function App() {
-  const [customer, setCustomer] = useState(initialCustomer);
+  const [customers, setCustomers] = useState([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [session, setSession] = useState(null);
   const [error, setError] = useState('');
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
 
+  const selectedCustomer = customers.find((customer) => customer.customer_id === selectedCustomerId);
+
   useEffect(() => {
-    document.title = session ? `Live call: ${customer.name}` : 'Credit Card Sales Agent';
-  }, [customer.name, session]);
+    document.title = session ? `Live call: ${session.customer.name}` : 'Credit Card Collections Agent';
+  }, [session]);
 
-  function updateCustomer(field, value) {
-    setCustomer((current) => ({ ...current, [field]: value }));
-  }
+  useEffect(() => {
+    async function loadCustomers() {
+      setError('');
+      setIsLoadingCustomers(true);
 
-  async function startCall(event) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/customers`);
+        const body = await response.json();
+        if (!response.ok) {
+          throw new Error(body.detail || 'Could not load customers.');
+        }
+        setCustomers(body);
+        setSelectedCustomerId(body[0]?.customer_id || '');
+      } catch (caught) {
+        setError(caught.message);
+      } finally {
+        setIsLoadingCustomers(false);
+      }
+    }
+
+    loadCustomers();
+  }, []);
+
+  async function startCall(mode, event) {
     event.preventDefault();
     setError('');
+
+    if (!selectedCustomerId) {
+      setError('Select a customer first.');
+      return;
+    }
+
     setIsStarting(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/session`, {
+      const endpoint = mode === 'phone' ? '/api/call' : '/api/session';
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customer }),
+        body: JSON.stringify({ customer_id: selectedCustomerId }),
       });
 
       const body = await response.json();
@@ -73,9 +92,10 @@ function App() {
       <main className="page call-page">
         <section className="call-card">
           <div>
-            <p className="eyebrow">Live sales conversation</p>
-            <h1>Talking with {customer.name}</h1>
+            <p className="eyebrow">Live collections conversation</p>
+            <h1>{session.phone_call_started ? 'Calling' : 'Testing'} {session.customer.name}</h1>
             <p className="muted">Room: {session.room_name}</p>
+            {session.phone_call_started && <p className="muted">Dialed: {session.customer.phone}</p>}
           </div>
 
           <LiveKitRoom
@@ -101,51 +121,55 @@ function App() {
     <main className="page">
       <section className="hero">
         <p className="eyebrow">AI voice agent</p>
-        <h1>Credit card sales calls with customer context</h1>
+        <h1>Credit card collection calls with customer context</h1>
         <p>
-          Add customer details, start a LiveKit room, and speak to the AI sales agent from your browser microphone.
+          Select a customer from the JSON dataset, test the agent in your browser, or dial the customer through LiveKit SIP.
         </p>
       </section>
 
-      <form className="panel" onSubmit={startCall}>
-        <div className="grid">
-          <label>
-            Name
-            <input required value={customer.name} onChange={(event) => updateCustomer('name', event.target.value)} />
-          </label>
-          <label>
-            Phone
-            <input value={customer.phone} onChange={(event) => updateCustomer('phone', event.target.value)} />
-          </label>
-          <label>
-            City
-            <input value={customer.city} onChange={(event) => updateCustomer('city', event.target.value)} />
-          </label>
-          <label>
-            Credit score band
-            <input value={customer.credit_score_band} onChange={(event) => updateCustomer('credit_score_band', event.target.value)} />
-          </label>
-          <label>
-            Current card
-            <input value={customer.current_card} onChange={(event) => updateCustomer('current_card', event.target.value)} />
-          </label>
-          <label>
-            Income band
-            <input value={customer.annual_income_band} onChange={(event) => updateCustomer('annual_income_band', event.target.value)} />
-          </label>
-          <label className="wide">
-            Preferred benefit
-            <input value={customer.preferred_benefit} onChange={(event) => updateCustomer('preferred_benefit', event.target.value)} />
-          </label>
-          <label className="wide">
-            Notes
-            <textarea rows="4" value={customer.notes} onChange={(event) => updateCustomer('notes', event.target.value)} />
-          </label>
-        </div>
+      <form className="panel">
+        <label>
+          Customer
+          <select
+            disabled={isLoadingCustomers}
+            value={selectedCustomerId}
+            onChange={(event) => setSelectedCustomerId(event.target.value)}
+          >
+            {customers.map((customer) => (
+              <option key={customer.customer_id} value={customer.customer_id}>
+                {customer.customer_id} - {customer.name} - {customer.scenario}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {selectedCustomer && (
+          <section className="customer-summary">
+            <div><strong>Phone</strong><span>{selectedCustomer.phone || 'Missing'}</span></div>
+            <div><strong>City</strong><span>{selectedCustomer.city || 'Unknown'}</span></div>
+            <div><strong>Language</strong><span>{selectedCustomer.preferred_language || 'Unknown'}</span></div>
+            <div><strong>Outstanding</strong><span>INR {selectedCustomer.outstanding_amount ?? '-'}</span></div>
+            <div><strong>Minimum due</strong><span>INR {selectedCustomer.minimum_due ?? '-'}</span></div>
+            <div><strong>DPD</strong><span>{selectedCustomer.days_past_due ?? '-'}</span></div>
+            <div><strong>Scenario</strong><span>{selectedCustomer.scenario || '-'}</span></div>
+            <div><strong>Priority</strong><span>{selectedCustomer.priority || '-'}</span></div>
+          </section>
+        )}
+
+        {selectedCustomer && (selectedCustomer.do_not_call || selectedCustomer.contact_restricted || !selectedCustomer.allow_voice_calls) && (
+          <p className="warning">This customer is restricted for voice calls. Phone dial-out will be blocked by the backend.</p>
+        )}
 
         {error && <p className="error">{error}</p>}
 
-        <button disabled={isStarting}>{isStarting ? 'Starting...' : 'Start voice call'}</button>
+        <div className="actions">
+          <button type="button" disabled={isStarting || isLoadingCustomers} onClick={(event) => startCall('browser', event)}>
+            {isStarting ? 'Starting...' : 'Test in browser'}
+          </button>
+          <button type="button" className="call-button" disabled={isStarting || isLoadingCustomers} onClick={(event) => startCall('phone', event)}>
+            {isStarting ? 'Dialing...' : 'Call customer phone'}
+          </button>
+        </div>
       </form>
     </main>
   );

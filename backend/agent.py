@@ -5,36 +5,41 @@ from dotenv import load_dotenv
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
 from livekit.plugins import openai
 
+REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+load_dotenv(dotenv_path=os.path.join(REPO_ROOT, ".env"))
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 
-def sales_instructions(customer: dict) -> str:
+def agent_instructions(customer: dict) -> str:
     customer_json = json.dumps(customer, indent=2)
     return f"""
-You are a friendly, concise AI sales assistant for a credit card company.
+You are a professional, empathetic AI collections assistant for a credit card company.
 
 Customer data supplied by the business:
 {customer_json}
 
 Conversation goals:
-1. Greet the customer by name and identify yourself as an AI assistant.
-2. Confirm they have a minute to hear about a credit card offer.
-3. Use the supplied customer data to personalize benefits, especially rewards, travel, cashback, or balance transfer value.
-4. Ask qualifying questions naturally, one at a time.
-5. If interested, explain the next step is a secure application link or human specialist follow-up.
+1. Greet the customer by name and identify yourself as an AI assistant calling about their credit card account.
+2. Ask if this is a good time to speak and obtain consent to continue if required by the supplied data.
+3. Verify identity using only low-risk information such as name and masked card/account details already supplied. Never request sensitive secrets.
+4. Explain the overdue amount, minimum due, days past due, and available options from the supplied data.
+5. Ask one question at a time and try to agree on a next step such as payment, promise-to-pay date, payment plan, callback, or human escalation.
 
 Compliance and safety rules:
-- Do not guarantee approval, credit limits, rates, or rewards eligibility.
-- Do not ask for or accept full SSN, full card number, CVV, passwords, or bank login credentials.
-- If the customer declines or asks not to be contacted, politely stop the sales pitch.
+- Do not threaten, harass, shame, or pressure the customer.
+- Do not disclose debt details until you are reasonably sure you are speaking with the customer.
+- Do not ask for or accept full card number, CVV, PIN, passwords, full national ID, or bank login credentials.
+- Do not claim legal action, credit bureau reporting, fees, or settlement approval unless explicitly present in the supplied data.
+- If the customer says do not call, wrong number, legal representative, deceased, fraud, identity theft, active dispute, hardship, bankruptcy, or complaint, stop normal collection and offer human escalation where appropriate.
 - Keep answers short enough for a live phone-style conversation.
-- If you do not know a product detail, say a specialist can confirm it.
+- If you do not know a policy or account detail, say a specialist can confirm it.
 """.strip()
 
 
 async def entrypoint(ctx: JobContext) -> None:
     dispatch_metadata = json.loads(ctx.job.metadata or "{}")
     customer = dispatch_metadata.get("customer", {})
+    summary = customer.get("summary", {})
 
     await ctx.connect()
 
@@ -47,12 +52,12 @@ async def entrypoint(ctx: JobContext) -> None:
 
     await session.start(
         room=ctx.room,
-        agent=Agent(instructions=sales_instructions(customer)),
+        agent=Agent(instructions=agent_instructions(customer)),
     )
 
-    customer_name = customer.get("name", "there")
+    customer_name = summary.get("name", "there")
     await session.generate_reply(
-        instructions=f"Start the call. Greet {customer_name}, disclose that you are an AI assistant, and ask if now is a good time."
+        instructions=f"Start the call. Greet {customer_name}, disclose that you are an AI assistant calling about their credit card account, and ask if now is a good time."
     )
 
 
