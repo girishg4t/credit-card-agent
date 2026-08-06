@@ -2,12 +2,12 @@ import json
 import logging
 import os
 import time
-import urllib.error
-import urllib.request
 import uuid
 from typing import Any, Literal
 
-from agora_agent.agentkit.token import generate_convo_ai_token
+from agora_agent import Area, AsyncAgora
+from agora_agent.agentkit import Agent as AgoraAgent
+from agora_agent.agentkit.vendors import DeepgramSTT, MiniMaxTTS, OpenAI, OpenAIRealtime
 from agora_token_builder import RtcTokenBuilder
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from livekit import api
 from pydantic import BaseModel, Field
 
-from backend.agent import agent_instructions
+from backend.agent import LANGUAGE_CODES, agent_instructions
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 load_dotenv(dotenv_path=os.path.join(REPO_ROOT, ".env"))
@@ -26,10 +26,13 @@ logger = logging.getLogger("credit-card-agent")
 AGENT_NAME = "credit-card-sales-agent"
 DatasetType = Literal["debt_collection", "credit_card"]
 AgentProvider = Literal["livekit", "agora"]
+VoiceMode = Literal["standard", "realtime"]
 DATASET_PATHS: dict[DatasetType, str] = {
     "debt_collection": os.getenv("DEBT_COLLECTION_DATA_PATH", os.getenv("CUSTOMER_DATA_PATH", "debt_collection_100_customers.json")),
     "credit_card": os.getenv("CREDIT_CARD_DATA_PATH", "customers.json"),
 }
+AGORA_AREAS = {"US": Area.US, "EU": Area.EU, "AP": Area.AP, "CN": Area.CN}
+AGORA_SESSIONS: dict[str, Any] = {}
 
 
 class CustomerSummary(BaseModel):
@@ -60,6 +63,7 @@ class SessionRequest(BaseModel):
     dataset_type: DatasetType = "debt_collection"
     provider: AgentProvider = "livekit"
     prompt_override: str | None = None
+    voice_mode: VoiceMode = "standard"
 
 
 class PromptPreviewRequest(BaseModel):
@@ -87,9 +91,10 @@ class SessionResponse(BaseModel):
     phone_call_started: bool = False
     agora_app_id: str | None = None
     agora_channel: str | None = None
-    agora_uid: str | None = None
-    agora_agent_uid: str | None = None
+    agora_uid: int | str | None = None
+    agora_agent_uid: int | str | None = None
     agora_agent_id: str | None = None
+    voice_mode: VoiceMode = "standard"
 
 
 def require_env(name: str) -> str:
@@ -264,6 +269,7 @@ async def create_livekit_session(
     dial_phone: bool,
     dataset_type: DatasetType,
     language: str | None = None,
+    voice_mode: VoiceMode = "standard",
     wait_until_answered: bool = False,
     prompt_override: str | None = None,
 ) -> SessionResponse:
@@ -284,6 +290,7 @@ async def create_livekit_session(
         "call_type": "phone" if dial_phone else "browser",
         "prompt_type": dataset_type,
         "language": selected_language,
+        "voice_mode": voice_mode,
     })
 
     token = (
@@ -343,10 +350,11 @@ async def create_livekit_session(
         customer=summary,
         language=selected_language,
         phone_call_started=dial_phone,
+        voice_mode=voice_mode,
     )
 
 
-def start_agora_agent_session(
+async def start_agora_agent_session(
     *,
     app_id: str,
     app_certificate: str,
@@ -356,70 +364,97 @@ def start_agora_agent_session(
     instructions: str,
     greeting_message: str,
     name: str,
+    language: str,
+    voice_mode: VoiceMode,
 ) -> str:
-    token_ttl = int(os.getenv("AGORA_TOKEN_TTL_SECONDS", "3600"))
-    agent_token = generate_convo_ai_token(
+    client = AsyncAgora(
+        area=AGORA_AREAS.get(os.getenv("AGORA_AREA", "AP").upper(), Area.AP),
         app_id=app_id,
         app_certificate=app_certificate,
-        channel_name=channel,
-        account=agent_uid,
-        token_expire=token_ttl,
-        privilege_expire=token_ttl,
     )
-    body = {
-        "name": name,
-        "properties": {
-            "channel": channel,
-            "token": agent_token,
-            "agent_rtc_uid": agent_uid,
-            "remote_rtc_uids": [user_uid],
-            "enable_string_uid": True,
-            "idle_timeout": int(os.getenv("AGORA_AGENT_IDLE_TIMEOUT", "60")),
-            "mllm": {
-                "enable": True,
-                "url": os.getenv("OPENAI_REALTIME_URL", "wss://api.openai.com/v1/realtime"),
-                "api_key": require_env("OPENAI_API_KEY"),
-                "params": {
-                    "model": os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime"),
-                    "voice": os.getenv("OPENAI_REALTIME_VOICE", "alloy"),
-                    "instructions": instructions,
-                    "input_audio_transcription": {
-                        "model": os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"),
-                    },
+    agent = AgoraAgent(
+        client=client,
+        instructions=instructions,
+        greeting=greeting_message,
+        failure_message="Please wait a moment while I reconnect.",
+        max_history=50,
+        turn_detection={
+            "config": {
+                "speech_threshold": 0.5,
+                "start_of_speech": {
+                    "mode": "vad",
+                    "vad_config": {"interrupt_duration_ms": 160, "prefix_padding_ms": 300},
                 },
-                "turn_detection": {
-                    "mode": "server_vad",
-                    "server_vad_config": {
-                        "prefix_padding_ms": 800,
-                        "silence_duration_ms": 640,
-                        "threshold": 0.5,
-                    },
+                "end_of_speech": {
+                    "mode": "vad",
+                    "vad_config": {"silence_duration_ms": 480},
                 },
-                "greeting_message": greeting_message,
-                "input_modalities": ["audio", "text"],
-                "output_modalities": ["text", "audio"],
-                "vendor": "openai",
             },
         },
-    }
-    data = json.dumps(body).encode("utf-8")
-    request = urllib.request.Request(
-        f"https://api.agora.io/api/conversational-ai-agent/v2/projects/{app_id}/join",
-        data=data,
-        method="POST",
-        headers={
-            "Authorization": f"agora token={agent_token}",
-            "Content-Type": "application/json",
+        advanced_features={"enable_rtm": True},
+        parameters={
+            "audio_scenario": "chorus",
+            "data_channel": "rtm",
+            "enable_error_message": True,
+            "enable_metrics": True,
         },
     )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            payload = json.loads(response.read().decode("utf-8") or "{}")
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Agora API returned {exc.code}: {detail}") from exc
 
-    return payload.get("agent_id") or payload.get("id") or name
+    if voice_mode == "realtime":
+        agent = agent.with_mllm(
+            OpenAIRealtime(
+                api_key=require_env("OPENAI_API_KEY"),
+                model=os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime"),
+                voice=os.getenv("OPENAI_VOICE", "alloy"),
+                instructions=instructions,
+                input_audio_transcription={
+                    "model": os.getenv("OPENAI_STT_MODEL", "gpt-4o-mini-transcribe")
+                },
+                greeting_message=greeting_message,
+                input_modalities=["audio", "text"],
+                output_modalities=["text", "audio"],
+            )
+        )
+    else:
+        agent = (
+            agent
+            .with_stt(
+                DeepgramSTT(
+                    model=os.getenv("AGORA_STT_MODEL", "nova-3"),
+                    language=LANGUAGE_CODES.get(language, "en"),
+                )
+            )
+            .with_llm(
+                OpenAI(
+                    model=os.getenv("AGORA_LLM_MODEL", "gpt-4o-mini"),
+                    greeting_message=greeting_message,
+                    failure_message="Please wait a moment while I reconnect.",
+                    max_history=15,
+                    max_tokens=1024,
+                    temperature=0.7,
+                    top_p=0.95,
+                )
+            )
+            .with_tts(
+                MiniMaxTTS(
+                    model=os.getenv("AGORA_TTS_MODEL", "speech_2_6_turbo"),
+                    voice_id=os.getenv("AGORA_TTS_VOICE_ID", "English_captivating_female1"),
+                )
+            )
+        )
+
+    session = agent.create_async_session(
+        channel=channel,
+        agent_uid=agent_uid,
+        remote_uids=[user_uid],
+        name=name,
+        idle_timeout=int(os.getenv("AGORA_AGENT_IDLE_TIMEOUT", "60")),
+        enable_string_uid=False,
+        expires_in=int(os.getenv("AGORA_TOKEN_TTL_SECONDS", "3600")),
+    )
+    agent_id = await session.start()
+    AGORA_SESSIONS[agent_id] = session
+    return agent_id
 
 
 async def create_agora_session(
@@ -429,19 +464,20 @@ async def create_agora_session(
     dataset_type: DatasetType,
     language: str | None = None,
     prompt_override: str | None = None,
+    voice_mode: VoiceMode = "standard",
 ) -> SessionResponse:
     if dial_phone:
         raise HTTPException(status_code=400, detail="Agora provider currently supports browser calls only. Choose LiveKit for phone dial-out.")
 
     summary = summarize_customer(record, dataset_type)
     selected_language = language or summary.preferred_language
-    app_id = require_env("APPID")
-    app_certificate = require_env("APP_CERTIFICATE")
+    app_id = os.getenv("AGORA_APP_ID") or require_env("APPID")
+    app_certificate = os.getenv("AGORA_APP_CERTIFICATE") or require_env("APP_CERTIFICATE")
 
     channel_prefix = "agora-debt" if dataset_type == "debt_collection" else "agora-card"
     channel = f"{channel_prefix}-{summary.customer_id.lower()}-{uuid.uuid4().hex[:8]}"
-    user_uid = f"user-{uuid.uuid4().hex[:8]}"
-    agent_uid = f"agent-{uuid.uuid4().hex[:8]}"
+    user_uid = 1_000_000 + uuid.uuid4().int % 8_000_000
+    agent_uid = 9_000_000 + uuid.uuid4().int % 90_000_000
     name = f"card-agent-{uuid.uuid4().hex[:8]}"
 
     customer_context = customer_payload(record, selected_language, dataset_type, prompt_override)
@@ -452,35 +488,41 @@ async def create_agora_session(
         f"I will speak in {selected_language or 'English'}. Is now a good time to talk?"
     )
     expires_at = int(time.time()) + int(os.getenv("AGORA_TOKEN_TTL_SECONDS", "3600"))
-    token = RtcTokenBuilder.buildTokenWithAccount(app_id, app_certificate, channel, user_uid, 1, expires_at)
+    token = RtcTokenBuilder.buildTokenWithUid(app_id, app_certificate, channel, user_uid, 1, expires_at)
 
     try:
-        import asyncio
-
-        agent_id = await asyncio.to_thread(
-            start_agora_agent_session,
+        agent_id = await start_agora_agent_session(
             app_id=app_id,
             app_certificate=app_certificate,
             channel=channel,
-            agent_uid=agent_uid,
-            user_uid=user_uid,
+            agent_uid=str(agent_uid),
+            user_uid=str(user_uid),
             instructions=instructions,
             greeting_message=greeting_message,
             name=name,
+            language=selected_language or "English",
+            voice_mode=voice_mode,
         )
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not start Agora ConvoAI agent: {exc}") from exc
+        logger.exception(
+            "Agora ConvoAI start failed provider=agora voice_mode=%s channel=%s",
+            voice_mode,
+            channel,
+        )
+        detail = str(exc).strip() or exc.__class__.__name__
+        raise HTTPException(status_code=502, detail=f"Could not start Agora ConvoAI agent: {detail}") from exc
 
     return SessionResponse(
         provider="agora",
         token=token,
         room_name=channel,
-        participant_name=user_uid,
+        participant_name=str(user_uid),
         customer=summary,
         language=selected_language,
         phone_call_started=False,
+        voice_mode=voice_mode,
         agora_app_id=app_id,
         agora_channel=channel,
         agora_uid=user_uid,
@@ -527,8 +569,22 @@ async def create_session(payload: SessionRequest) -> SessionResponse:
         payload.customer_id,
     )
     if payload.provider == "agora":
-        return await create_agora_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override)
-    return await create_livekit_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override)
+        return await create_agora_session(
+            record,
+            dial_phone=False,
+            dataset_type=payload.dataset_type,
+            language=payload.language,
+            voice_mode=payload.voice_mode,
+            prompt_override=payload.prompt_override,
+        )
+    return await create_livekit_session(
+        record,
+        dial_phone=False,
+        dataset_type=payload.dataset_type,
+        language=payload.language,
+        voice_mode=payload.voice_mode,
+        prompt_override=payload.prompt_override,
+    )
 
 
 @app.post("/api/call", response_model=SessionResponse)
@@ -541,12 +597,20 @@ async def call_customer(payload: PhoneCallRequest) -> SessionResponse:
         payload.customer_id,
     )
     if payload.provider == "agora":
-        return await create_agora_session(record, dial_phone=True, dataset_type=payload.dataset_type, language=payload.language, prompt_override=payload.prompt_override)
+        return await create_agora_session(
+            record,
+            dial_phone=True,
+            dataset_type=payload.dataset_type,
+            language=payload.language,
+            voice_mode=payload.voice_mode,
+            prompt_override=payload.prompt_override,
+        )
     return await create_livekit_session(
         record,
         dial_phone=True,
         dataset_type=payload.dataset_type,
         language=payload.language,
+        voice_mode=payload.voice_mode,
         wait_until_answered=payload.wait_until_answered,
         prompt_override=payload.prompt_override,
     )
