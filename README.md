@@ -7,7 +7,8 @@ Runnable frontend and backend for a LiveKit-powered AI voice agent that can talk
 - Python 3.10+
 - Node.js 20+
 - A LiveKit Cloud project or self-hosted LiveKit server
-- An OpenAI API key for the voice agent
+- An OpenAI API key for the LiveKit voice agent
+- A Google Gemini API key for Agora ConvoAI Gemini Live sessions
 - Optional: a LiveKit outbound SIP trunk for dialing real phone numbers
 
 ## Setup
@@ -27,10 +28,17 @@ LIVEKIT_API_KEY=your_livekit_api_key
 LIVEKIT_API_SECRET=your_livekit_api_secret
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_REALTIME_MODEL=gpt-realtime
+OPENAI_REALTIME_VOICE=alloy
+GOOGLE_GEMINI_API_KEY=your_google_gemini_api_key
+AGORA_GEMINI_URL=wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent
+AGORA_GEMINI_MODEL=gemini-3.1-flash-live-preview
+AGORA_GEMINI_VOICE=Charon
 LIVEKIT_SIP_TRUNK_ID=your_livekit_outbound_sip_trunk_id
 ```
 
 `LIVEKIT_SIP_TRUNK_ID` is required only for `Call customer phone`. Browser testing works without it.
+
+Agora ConvoAI lets you choose `OpenAI Realtime` or `Gemini Live` in the UI. Gemini Live is selected by default. The Agora docs currently show `gemini-3.1-flash-live-preview`; set `AGORA_GEMINI_MODEL` to a different Gemini Live model ID if your Google/Agora account supports it.
 
 The backend loads environment variables from both `.env` at the repo root and `backend/.env`.
 
