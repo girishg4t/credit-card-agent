@@ -1,6 +1,6 @@
-# Credit Card Sales Voice Agent
+# Credit Card Collections Voice Agent
 
-Runnable frontend and backend for a LiveKit-powered AI voice agent that can talk to credit card customers using supplied customer data.
+Runnable frontend and backend for a LiveKit-powered AI voice agent that can talk to credit card customers using `debt_collection_100_customers.json`.
 
 ## Prerequisites
 
@@ -8,10 +8,11 @@ Runnable frontend and backend for a LiveKit-powered AI voice agent that can talk
 - Node.js 20+
 - A LiveKit Cloud project or self-hosted LiveKit server
 - An OpenAI API key for the voice agent
+- Optional: a LiveKit outbound SIP trunk for dialing real phone numbers
 
 ## Setup
 
-1. Copy environment files:
+1. Copy environment files, or use a repo-root `.env` for backend secrets:
 
 ```bash
 cp backend/.env.example backend/.env
@@ -25,7 +26,12 @@ LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=your_livekit_api_key
 LIVEKIT_API_SECRET=your_livekit_api_secret
 OPENAI_API_KEY=your_openai_api_key
+LIVEKIT_SIP_TRUNK_ID=your_livekit_outbound_sip_trunk_id
 ```
+
+`LIVEKIT_SIP_TRUNK_ID` is required only for `Call customer phone`. Browser testing works without it.
+
+The backend loads environment variables from both `.env` at the repo root and `backend/.env`.
 
 3. Install backend dependencies:
 
@@ -67,15 +73,19 @@ cd frontend
 npm run dev
 ```
 
-Open `http://localhost:5173`, enter customer data, click `Start voice call`, allow microphone access, and speak with the agent.
+Open `http://localhost:5173`, select a customer, then choose one of these actions:
+
+- `Test in browser`: joins a LiveKit room from your browser so you can talk to the agent as the customer.
+- `Call customer phone`: dials the selected customer's phone number through LiveKit SIP and joins the room for monitoring.
 
 ## How It Works
 
-- The frontend posts customer data to `POST /api/session`.
-- The backend creates a LiveKit room name, dispatches the `credit-card-sales-agent` worker with that customer data, and returns a LiveKit participant token.
-- The frontend joins the room with microphone enabled.
+- The backend loads customers from `debt_collection_100_customers.json`.
+- The frontend loads customer summaries from `GET /api/customers`.
+- `POST /api/session` creates a browser test room for the selected customer.
+- `POST /api/call` creates a room, dispatches the LiveKit agent, and starts an outbound SIP call to the selected customer.
 - The worker joins the same room and uses OpenAI realtime voice through LiveKit Agents.
 
 ## Safety Notes
 
-The agent prompt includes basic sales compliance guardrails: identify itself as an AI assistant, avoid guaranteed approvals, avoid collecting full card numbers or SSNs, and stop if the customer declines.
+The backend blocks phone dial-out for records marked `doNotCall`, `allowVoiceCalls=false`, wrong number, contact restricted, deceased, legal representation, bankruptcy/insolvency, or collections hold. The agent prompt also avoids sensitive data collection and escalates regulated scenarios.
