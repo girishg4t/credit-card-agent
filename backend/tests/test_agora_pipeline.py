@@ -37,8 +37,8 @@ class AgoraPipelineTests(unittest.IsolatedAsyncioTestCase):
                 app_id="test-app-id",
                 app_certificate="test-certificate",
                 channel="test-channel",
-                agent_uid="agent-uid",
-                user_uid="user-uid",
+                agent_uid="9000001",
+                user_uid="1000001",
                 instructions="Test instructions",
                 greeting_message="Hello",
                 name="test-agent-name",
@@ -74,9 +74,9 @@ class AgoraPipelineTests(unittest.IsolatedAsyncioTestCase):
 
         session = self.captured["session"]
         self.assertEqual(session["channel"], "test-channel")
-        self.assertEqual(session["agent_uid"], "agent-uid")
-        self.assertEqual(session["remote_uids"], ["user-uid"])
-        self.assertTrue(session["enable_string_uid"])
+        self.assertEqual(session["agent_uid"], "9000001")
+        self.assertEqual(session["remote_uids"], ["1000001"])
+        self.assertFalse(session["enable_string_uid"])
         self.assertEqual(session["name"], "test-agent-name")
 
 

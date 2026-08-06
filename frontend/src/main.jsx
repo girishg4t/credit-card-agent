@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { LiveKitRoom, RoomAudioRenderer, ControlBar, useParticipants, useTranscriptions } from '@livekit/components-react';
 import AgoraRTC from 'agora-rtc-sdk-ng';
+import { AgoraVoiceAI, AgoraVoiceAIEvents } from 'agora-agent-client-toolkit';
+import { agoraTranscriptKey, isAgoraAgentTranscript, normalizeAgoraTranscript } from './agoraTranscript';
 import '@livekit/components-styles';
 import './styles.css';
 
@@ -71,11 +73,13 @@ function TranscriptPanel() {
 function AgoraCallRoom({ session }) {
   const [status, setStatus] = useState('Connecting to Agora...');
   const [error, setError] = useState('');
+  const [transcript, setTranscript] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
     const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
     let microphoneTrack;
+    let voiceAI;
 
     async function join() {
       try {
@@ -96,6 +100,14 @@ function AgoraCallRoom({ session }) {
         });
 
         await client.join(session.agora_app_id, session.agora_channel, session.token, session.agora_uid);
+        voiceAI = await AgoraVoiceAI.init({ rtcEngine: client });
+        voiceAI.on(AgoraVoiceAIEvents.TRANSCRIPT_UPDATED, (history) => {
+          if (!cancelled) setTranscript(normalizeAgoraTranscript(history));
+        });
+        voiceAI.on(AgoraVoiceAIEvents.AGENT_ERROR, (_agentUid, agentError) => {
+          if (!cancelled) setError(agentError?.message || 'The Agora agent reported an error.');
+        });
+        voiceAI.subscribeMessage(session.agora_channel);
         microphoneTrack = await AgoraRTC.createMicrophoneAudioTrack();
         await client.publish([microphoneTrack]);
         if (!cancelled) {
@@ -117,6 +129,8 @@ function AgoraCallRoom({ session }) {
         microphoneTrack.stop();
         microphoneTrack.close();
       }
+      voiceAI?.unsubscribe();
+      voiceAI?.destroy();
       client.leave().catch(() => {});
     };
   }, [session]);
@@ -132,6 +146,26 @@ function AgoraCallRoom({ session }) {
       </div>
       <p className="call-hint">Allow microphone access. Agora ConvoAI joins this channel as the AI agent and responds over audio.</p>
       {error && <p className="error">{error}</p>}
+      <section className="transcript-panel" aria-live="polite">
+        <div className="transcript-header">
+          <strong>Live transcript</strong>
+          <span>{transcript.length ? `${transcript.length} updates` : 'Waiting for speech'}</span>
+        </div>
+        <div className="transcript-feed">
+          {transcript.length === 0 && (
+            <p className="transcript-empty">Transcript will appear here once the agent or customer speaks.</p>
+          )}
+          {transcript.map((entry, index) => {
+            const isAgent = isAgoraAgentTranscript(entry, session.agora_agent_uid);
+            return (
+              <article className={isAgent ? 'transcript-line agent' : 'transcript-line customer'} key={agoraTranscriptKey(entry, index)}>
+                <span>{isAgent ? 'Agent' : 'Customer'}</span>
+                <p>{entry.text}</p>
+              </article>
+            );
+          })}
+        </div>
+      </section>
     </section>
   );
 }
@@ -272,13 +306,17 @@ function App() {
       <main className="page call-page">
         <section className="call-card">
           <div className="call-header">
-            <p className="eyebrow">Live {session.provider === 'agora' ? 'Agora ConvoAI' : 'LiveKit'} {session.customer.dataset_type === 'credit_card' ? 'credit card sales' : 'collections'} conversation</p>
-            <h1>{session.phone_call_started ? 'Calling' : 'Testing'} {session.customer.name}</h1>
-            <p className="muted">Room: {session.room_name}</p>
-            <p className="muted">Language: {session.language || selectedLanguage}</p>
-            <p className="muted">Voice mode: {session.voice_mode === 'realtime' ? 'Realtime speech-to-speech' : 'ASR / LLM / TTS'}</p>
-            {session.provider === 'agora' && <p className="muted">Agent ID: {session.agora_agent_id || session.agora_agent_uid}</p>}
-            {session.phone_call_started && <p className="muted">Dialed: {session.customer.phone}</p>}
+            <div className="call-title">
+              <p className="eyebrow">Live {session.provider === 'agora' ? 'Agora ConvoAI' : 'LiveKit'} {session.customer.dataset_type === 'credit_card' ? 'credit card sales' : 'collections'} conversation</p>
+              <h1>{session.phone_call_started ? 'Calling' : 'Testing'} {session.customer.name}</h1>
+            </div>
+            <dl className="call-meta">
+              <div><dt>Room</dt><dd>{session.room_name}</dd></div>
+              <div><dt>Language</dt><dd>{session.language || selectedLanguage}</dd></div>
+              <div><dt>Voice mode</dt><dd>{session.voice_mode === 'realtime' ? 'Realtime speech-to-speech' : 'ASR / LLM / TTS'}</dd></div>
+              {session.provider === 'agora' && <div><dt>Agent ID</dt><dd>{session.agora_agent_id || session.agora_agent_uid}</dd></div>}
+              {session.phone_call_started && <div><dt>Dialed</dt><dd>{session.customer.phone}</dd></div>}
+            </dl>
           </div>
 
           {session.provider === 'agora' ? (
