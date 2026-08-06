@@ -163,9 +163,9 @@ const providerFeatureCatalog = {
       alternative: 'LiveKit maps the same UI voice style to the OpenAI realtime voice used by the LiveKit agent.',
     },
     {
-      name: 'Tools enabled',
-      status: 'App-defined',
-      description: 'These are business capabilities your app tells the agent about. Agora does not provide these as RTC features; your backend/model layer must execute them.',
+      name: 'Backend integrations',
+      status: 'Required for tools',
+      description: 'Agora does not expose these business tools as native RTC features. Eligibility, CRM updates, and payment-plan logic should run through your backend.',
       alternative: 'LiveKit Agents has a more explicit tool-calling programming model in the agent process.',
     },
     {
@@ -228,8 +228,20 @@ function AgentConnectionStatus() {
   );
 }
 
-function TranscriptPanel() {
+function TranscriptPanel({ onTranscriptChange }) {
   const transcriptions = useTranscriptions();
+
+  useEffect(() => {
+    onTranscriptChange(transcriptions.map((entry) => {
+      const identity = entry.participantInfo?.identity || '';
+      return {
+        speaker: identity.toLowerCase().includes('agent') ? 'Agent' : 'Customer',
+        identity,
+        text: entry.text,
+        stream_id: entry.streamInfo?.id || null,
+      };
+    }));
+  }, [transcriptions]);
 
   return (
     <section className="transcript-panel" aria-live="polite">
@@ -335,6 +347,10 @@ function App() {
   const [lastCallMode, setLastCallMode] = useState('browser');
   const [session, setSession] = useState(null);
   const [startedCallPayload, setStartedCallPayload] = useState(null);
+  const [callStartedAt, setCallStartedAt] = useState(null);
+  const [callTranscript, setCallTranscript] = useState([]);
+  const [evaluations, setEvaluations] = useState([]);
+  const [evaluationStatus, setEvaluationStatus] = useState('');
   const [pendingCall, setPendingCall] = useState(null);
   const [promptDraft, setPromptDraft] = useState('');
   const [isLoadingPrompt, setIsLoadingPrompt] = useState(false);
@@ -363,6 +379,14 @@ function App() {
     });
   }
 
+  function selectedAgentConfig() {
+    if (agentProvider === 'agora') {
+      const { tools: _tools, ...configWithoutTools } = agentConfig;
+      return configWithoutTools;
+    }
+    return agentConfig;
+  }
+
   function buildCallPayload(customer, language, promptOverride) {
     return {
       customer_id: customer.customer_id,
@@ -370,7 +394,7 @@ function App() {
       dataset_type: datasetType,
       provider: agentProvider,
       agora_mllm_provider: agoraMllmProvider,
-      agent_config: agentConfig,
+      agent_config: selectedAgentConfig(),
       prompt_override: promptOverride,
     };
   }
@@ -384,7 +408,7 @@ function App() {
       },
       language: selectedCallLanguage,
       prompt_type: datasetType,
-      agent_config: agentConfig,
+      agent_config: selectedAgentConfig(),
     };
 
     const livekitMetadata = {
@@ -392,7 +416,7 @@ function App() {
       call_type: mode === 'phone' ? 'phone' : 'browser',
       prompt_type: datasetType,
       language: selectedCallLanguage,
-      agent_config: agentConfig,
+      agent_config: selectedAgentConfig(),
     };
 
     const agoraPreview = {
@@ -438,6 +462,23 @@ function App() {
     loadCustomers();
   }, [datasetType]);
 
+  async function loadEvaluations() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/evaluations`);
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(body.detail || 'Could not load evaluations.');
+      }
+      setEvaluations(body);
+    } catch (caught) {
+      setEvaluationStatus(caught.message);
+    }
+  }
+
+  useEffect(() => {
+    loadEvaluations();
+  }, []);
+
   function changeDataset(nextDatasetType) {
     setError('');
     setCustomers([]);
@@ -465,7 +506,7 @@ function App() {
       customer,
       language: rowLanguage,
       mode: providerCallMode(agentProvider),
-      agentConfig,
+      agentConfig: selectedAgentConfig(),
     });
 
     try {
@@ -537,11 +578,68 @@ function App() {
       }
 
       setStartedCallPayload(requestPayload);
+      setCallStartedAt(new Date().toISOString());
+      setCallTranscript([]);
+      setEvaluationStatus('');
       setSession(body);
     } catch (caught) {
       setError(caught.message);
     } finally {
       setIsStarting(false);
+    }
+  }
+
+  async function saveEvaluationIfEnabled() {
+    if (!session || !startedCallPayload?.agent_config?.save_transcript) {
+      return false;
+    }
+
+    const endedAt = new Date();
+    const startedAt = callStartedAt ? new Date(callStartedAt) : endedAt;
+    const durationSeconds = Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000));
+    const payload = {
+      provider: session.provider,
+      room_name: session.room_name,
+      customer_id: session.customer.customer_id,
+      customer_name: session.customer.name,
+      dataset_type: startedCallPayload.dataset_type,
+      language: startedCallPayload.language,
+      started_at: callStartedAt,
+      ended_at: endedAt.toISOString(),
+      duration_seconds: durationSeconds,
+      agent_config: startedCallPayload.agent_config,
+      transcript: callTranscript,
+      metrics: {
+        transcript_updates: callTranscript.length,
+        phone_call_started: session.phone_call_started,
+        provider_voice: providerVoiceLabel(session.provider, startedCallPayload.agora_mllm_provider, startedCallPayload.agent_config.voice),
+      },
+    };
+
+    const response = await fetch(`${API_BASE_URL}/api/evaluations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      throw new Error(body.detail || 'Could not save evaluation.');
+    }
+    await loadEvaluations();
+    return true;
+  }
+
+  async function endCall() {
+    try {
+      const saved = await saveEvaluationIfEnabled();
+      setEvaluationStatus(saved ? 'Saved transcript and evaluation metrics.' : 'Call ended. Metrics saving was disabled.');
+    } catch (caught) {
+      setEvaluationStatus(caught.message);
+    } finally {
+      setSession(null);
+      setStartedCallPayload(null);
+      setCallStartedAt(null);
+      setCallTranscript([]);
     }
   }
 
@@ -639,7 +737,7 @@ function App() {
           <div><strong>Turn detection</strong><span>{optionLabel(turnDetectionOptions, config.turn_detection)}</span></div>
           <div><strong>Interruptions</strong><span>{config.interruptions ? 'Allowed' : 'Disabled'}</span></div>
           <div><strong>Latency mode</strong><span>{optionLabel(latencyModeOptions, config.latency_mode)}</span></div>
-          <div><strong>Tools</strong><span>{tools.length ? tools.map((tool) => optionLabel(toolOptions, tool)).join(', ') : 'None'}</span></div>
+          {startedCallPayload?.provider === 'livekit' && <div><strong>Tools</strong><span>{tools.length ? tools.map((tool) => optionLabel(toolOptions, tool)).join(', ') : 'None'}</span></div>}
           <div><strong>Metrics</strong><span>{config.save_transcript ? 'Transcript and metrics enabled' : 'Not saved'}</span></div>
         </section>
 
@@ -648,6 +746,48 @@ function App() {
             <summary>View exact payload used to start this call</summary>
             <pre>{JSON.stringify(withoutPrompt(startedCallPayload), null, 2)}</pre>
           </details>
+        )}
+      </section>
+    );
+  }
+
+  function renderEvaluationHistory() {
+    return (
+      <section className="panel evaluation-history" aria-label="Saved call evaluations">
+        <div className="setup-header">
+          <div>
+            <p className="eyebrow">Saved evaluations</p>
+            <h2>Agora vs LiveKit comparison history</h2>
+          </div>
+          <span className="count-pill">{evaluations.length} saved</span>
+        </div>
+
+        {evaluationStatus && <p className="call-hint">{evaluationStatus}</p>}
+
+        {evaluations.length === 0 ? (
+          <p className="transcript-empty">No saved evaluations yet. Start and end a call with transcript/metrics enabled to save one here.</p>
+        ) : (
+          <div className="evaluation-list">
+            {evaluations.slice(0, 6).map((evaluation) => (
+              <article className="evaluation-card" key={evaluation.id || evaluation.room_name}>
+                <div className="feature-card-title">
+                  <strong>{evaluation.provider === 'agora' ? 'Agora ConvoAI' : 'LiveKit'} - {evaluation.customer_name || evaluation.customer_id}</strong>
+                  <span>{evaluation.duration_seconds ?? 0}s</span>
+                </div>
+                <p>{evaluation.dataset_type === 'credit_card' ? 'Credit card sales' : 'Debt collection'} · {evaluation.language || 'Language not set'} · {evaluation.metrics?.transcript_updates ?? 0} transcript updates</p>
+                <section className="customer-summary evaluation-summary">
+                  <div><strong>Voice</strong><span>{evaluation.metrics?.provider_voice || optionLabel(voiceOptions, evaluation.agent_config?.voice)}</span></div>
+                  <div><strong>Turn detection</strong><span>{optionLabel(turnDetectionOptions, evaluation.agent_config?.turn_detection)}</span></div>
+                  <div><strong>Interruptions</strong><span>{evaluation.agent_config?.interruptions ? 'Allowed' : 'Disabled'}</span></div>
+                  <div><strong>Latency</strong><span>{optionLabel(latencyModeOptions, evaluation.agent_config?.latency_mode)}</span></div>
+                </section>
+                <details className="payload-preview">
+                  <summary>View saved transcript and metrics</summary>
+                  <pre>{JSON.stringify(evaluation, null, 2)}</pre>
+                </details>
+              </article>
+            ))}
+          </div>
         )}
       </section>
     );
@@ -695,22 +835,22 @@ function App() {
                 autoGainControl: true,
               }}
               video={false}
-              onDisconnected={() => setSession(null)}
+              onDisconnected={endCall}
             >
               <RoomAudioRenderer />
               <AgentConnectionStatus />
-              <TranscriptPanel />
+              <TranscriptPanel onTranscriptChange={setCallTranscript} />
               <p className="call-hint">Allow microphone access. The agent will greet you when it is ready, then you can speak normally.</p>
               <ControlBar variation="minimal" controls={{ camera: false, screenShare: false }} />
             </LiveKitRoom>
           )}
 
           <div className="actions call-actions">
-            <button className="secondary" onClick={() => setSession(null)}>End call</button>
+            <button className="secondary" onClick={endCall}>End call</button>
             <button onClick={(event) => startCall(lastCallMode, event)} disabled={isStarting}>
               {isStarting ? 'Starting...' : 'Make call again'}
             </button>
-            <button className="light-button" onClick={() => setSession(null)}>Change customer</button>
+            <button className="light-button" onClick={endCall}>Change customer</button>
           </div>
         </section>
       </main>
@@ -868,31 +1008,37 @@ function App() {
             </label>
           </div>
 
-          <div className="config-toggles">
-            <div>
-              <strong>Tools enabled</strong>
-              <span>Select the tools this agent can use during the call.</span>
+          {agentProvider === 'livekit' ? (
+            <div className="config-toggles">
+              <div>
+                <strong>Tools enabled</strong>
+                <span>Select the tools this LiveKit agent can use during the call.</span>
+              </div>
+              <div className="tool-chip-grid">
+                {toolOptions.map((option) => (
+                  <article className="tool-card" key={option.value} title={`${option.description} Alternative: ${option.alternative}`}>
+                    <label className="tool-chip">
+                      <input
+                        type="checkbox"
+                        checked={agentConfig.tools.includes(option.value)}
+                        onChange={() => toggleAgentTool(option.value)}
+                      />
+                      {option.label}
+                    </label>
+                    <p>{option.description}</p>
+                    <details className="feature-help">
+                      <summary>Agora alternative</summary>
+                      <p>{option.alternative}</p>
+                    </details>
+                  </article>
+                ))}
+              </div>
             </div>
-            <div className="tool-chip-grid">
-              {toolOptions.map((option) => (
-                <article className="tool-card" key={option.value} title={`${option.description} Alternative: ${option.alternative}`}>
-                  <label className="tool-chip">
-                    <input
-                      type="checkbox"
-                      checked={agentConfig.tools.includes(option.value)}
-                      onChange={() => toggleAgentTool(option.value)}
-                    />
-                    {option.label}
-                  </label>
-                  <p>{option.description}</p>
-                  <details className="feature-help">
-                    <summary>Provider alternative</summary>
-                    <p>{option.alternative}</p>
-                  </details>
-                </article>
-              ))}
-            </div>
-          </div>
+          ) : (
+            <p className="call-hint">
+              Agora tools are not shown because these business actions are not native Agora RTC options. Eligibility checks, CRM notes, and payment-plan actions should be implemented through your backend or model-provider tool calling.
+            </p>
+          )}
 
           <label className="config-checkbox">
             <input
@@ -1033,6 +1179,8 @@ function App() {
         )}
       </form>
 
+      {renderEvaluationHistory()}
+
       {pendingCall && (
         <div className="modal-backdrop" role="presentation" onClick={closeCallModal}>
           <section className="call-modal" role="dialog" aria-modal="true" aria-labelledby="call-modal-title" onClick={(event) => event.stopPropagation()}>
@@ -1059,7 +1207,7 @@ function App() {
               <div><strong>Turn detection</strong><span>{optionLabel(turnDetectionOptions, pendingCall.agentConfig.turn_detection)}</span></div>
               <div><strong>Interruptions</strong><span>{pendingCall.agentConfig.interruptions ? 'Allowed' : 'Disabled'}</span></div>
               <div><strong>Latency mode</strong><span>{optionLabel(latencyModeOptions, pendingCall.agentConfig.latency_mode)}</span></div>
-              <div><strong>Tools</strong><span>{pendingCall.agentConfig.tools.length ? pendingCall.agentConfig.tools.map((tool) => optionLabel(toolOptions, tool)).join(', ') : 'None'}</span></div>
+              {agentProvider === 'livekit' && <div><strong>Tools</strong><span>{pendingCall.agentConfig.tools.length ? pendingCall.agentConfig.tools.map((tool) => optionLabel(toolOptions, tool)).join(', ') : 'None'}</span></div>}
               <div><strong>Metrics</strong><span>{pendingCall.agentConfig.save_transcript ? 'Transcript and metrics enabled' : 'Not saved'}</span></div>
               <div><strong>Scenario</strong><span>{pendingCall.customer.scenario || '-'}</span></div>
               {pendingCall.customer.dataset_type === 'debt_collection' && <div><strong>Outstanding</strong><span>INR {pendingCall.customer.outstanding_amount ?? '-'}</span></div>}

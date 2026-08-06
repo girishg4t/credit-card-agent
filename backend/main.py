@@ -20,6 +20,8 @@ from backend.agent import agent_instructions
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 load_dotenv(dotenv_path=os.path.join(REPO_ROOT, ".env"))
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
+RUN_DIR = os.path.join(REPO_ROOT, ".run")
+EVALUATIONS_PATH = os.path.join(RUN_DIR, "call-evaluations.json")
 
 
 logger = logging.getLogger("credit-card-agent")
@@ -88,6 +90,21 @@ class PromptPreviewResponse(BaseModel):
     prompt: str
 
 
+class CallEvaluationRequest(BaseModel):
+    provider: AgentProvider
+    room_name: str = Field(..., min_length=1, max_length=160)
+    customer_id: str = Field(..., min_length=1, max_length=80)
+    customer_name: str | None = Field(default=None, max_length=160)
+    dataset_type: DatasetType = "debt_collection"
+    language: str | None = Field(default=None, max_length=80)
+    started_at: str | None = None
+    ended_at: str | None = None
+    duration_seconds: int | None = None
+    agent_config: dict[str, Any] | None = None
+    transcript: list[dict[str, Any]] = Field(default_factory=list)
+    metrics: dict[str, Any] | None = None
+
+
 class PhoneCallRequest(SessionRequest):
     wait_until_answered: bool = False
 
@@ -123,6 +140,23 @@ def require_any_env(*names: str) -> str:
             return value
     joined_names = " or ".join(names)
     raise HTTPException(status_code=500, detail=f"Missing required environment variable: {joined_names}")
+
+
+def read_evaluations() -> list[dict[str, Any]]:
+    if not os.path.exists(EVALUATIONS_PATH):
+        return []
+    try:
+        with open(EVALUATIONS_PATH, encoding="utf-8") as file:
+            payload = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return []
+    return payload if isinstance(payload, list) else []
+
+
+def write_evaluations(evaluations: list[dict[str, Any]]) -> None:
+    os.makedirs(RUN_DIR, exist_ok=True)
+    with open(EVALUATIONS_PATH, "w", encoding="utf-8") as file:
+        json.dump(evaluations, file, indent=2, ensure_ascii=False)
 
 
 def selected_voice(agent_config: dict[str, Any] | None, voice_map: dict[str, str], env_names: tuple[str, ...], default: str) -> str:
@@ -616,6 +650,22 @@ def prompt_preview(payload: PromptPreviewRequest) -> PromptPreviewResponse:
     record = find_customer_record(payload.customer_id, payload.dataset_type)
     prompt = agent_instructions(customer_payload(record, payload.language, payload.dataset_type, agent_config=payload.agent_config))
     return PromptPreviewResponse(prompt=prompt)
+
+
+@app.get("/api/evaluations")
+def list_evaluations() -> list[dict[str, Any]]:
+    return list(reversed(read_evaluations()))
+
+
+@app.post("/api/evaluations")
+def save_evaluation(payload: CallEvaluationRequest) -> dict[str, Any]:
+    evaluations = read_evaluations()
+    saved = payload.model_dump()
+    saved["id"] = uuid.uuid4().hex
+    saved["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    evaluations.append(saved)
+    write_evaluations(evaluations[-100:])
+    return saved
 
 
 @app.post("/api/session", response_model=SessionResponse)

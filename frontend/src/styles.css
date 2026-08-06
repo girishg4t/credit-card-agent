@@ -657,6 +657,38 @@ button:disabled {
   white-space: pre-wrap;
 }
 
+.evaluation-history {
+  align-self: start;
+  grid-column: 1 / -1;
+}
+
+.evaluation-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.evaluation-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #e3e8f2;
+  border-radius: 20px;
+  padding: 16px;
+  background: #fbfcff;
+}
+
+.evaluation-card > p {
+  margin: 0;
+  color: #667085;
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.evaluation-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 0;
+}
+
 .prompt-editor {
   gap: 10px;
 }
@@ -833,6 +865,7 @@ button:disabled {
 
   .config-grid,
   .feature-card-grid,
+  .evaluation-list,
   .tool-chip-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -860,7 +893,9 @@ button:disabled {
   .debt-control-row,
   .config-grid,
   .feature-card-grid,
+  .evaluation-list,
   .tool-chip-grid,
+  .evaluation-summary,
   .customer-summary {
     grid-template-columns: 1fr;
   }
