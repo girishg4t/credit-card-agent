@@ -16,6 +16,11 @@ stop_process() {
   local pid
   pid="$(cat "$pid_file")"
   if kill -0 "$pid" >/dev/null 2>&1; then
+    if command -v pgrep >/dev/null 2>&1; then
+      for child_pid in $(pgrep -P "$pid" || true); do
+        kill "$child_pid" >/dev/null 2>&1 || true
+      done
+    fi
     kill "$pid"
     for _ in 1 2 3 4 5; do
       if ! kill -0 "$pid" >/dev/null 2>&1; then

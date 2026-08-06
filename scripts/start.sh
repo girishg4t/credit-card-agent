@@ -24,6 +24,13 @@ ensure_python_env() {
     "$ROOT_DIR/.venv/bin/python" -m pip install -r "$ROOT_DIR/backend/requirements.txt" >"$LOG_DIR/pip-install.log" 2>&1
     touch "$RUN_DIR/backend-deps-installed"
   fi
+
+  local cert_file
+  cert_file="$($ROOT_DIR/.venv/bin/python -c 'import certifi; print(certifi.where())' 2>/dev/null || true)"
+  if [ -n "$cert_file" ]; then
+    export SSL_CERT_FILE="$cert_file"
+    export REQUESTS_CA_BUNDLE="$cert_file"
+  fi
 }
 
 ensure_frontend_env() {
@@ -48,7 +55,7 @@ start_process() {
     return
   fi
 
-  (cd "$ROOT_DIR" && "$@") >"$log_file" 2>&1 &
+  (cd "$ROOT_DIR" && exec "$@") >"$log_file" 2>&1 &
   echo $! >"$pid_file"
   echo "started $name: pid $(cat "$pid_file"), log $log_file"
 }
