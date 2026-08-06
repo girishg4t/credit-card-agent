@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import time
 import urllib.error
@@ -21,6 +22,7 @@ load_dotenv(dotenv_path=os.path.join(REPO_ROOT, ".env"))
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 
+logger = logging.getLogger("credit-card-agent")
 AGENT_NAME = "credit-card-sales-agent"
 DatasetType = Literal["debt_collection", "credit_card"]
 VoiceMode = Literal["standard", "realtime"]
@@ -499,6 +501,12 @@ def list_customers(dataset_type: DatasetType = "debt_collection") -> list[Custom
 @app.post("/api/session", response_model=SessionResponse)
 async def create_session(payload: SessionRequest) -> SessionResponse:
     record = find_customer_record(payload.customer_id, payload.dataset_type)
+    logger.info(
+        "api_provider=%s endpoint=/api/session mode=browser dataset=%s customer_id=%s",
+        payload.provider,
+        payload.dataset_type,
+        payload.customer_id,
+    )
     if payload.provider == "agora":
         return await create_agora_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language)
     return await create_livekit_session(
@@ -513,6 +521,12 @@ async def create_session(payload: SessionRequest) -> SessionResponse:
 @app.post("/api/call", response_model=SessionResponse)
 async def call_customer(payload: PhoneCallRequest) -> SessionResponse:
     record = find_customer_record(payload.customer_id, payload.dataset_type)
+    logger.info(
+        "api_provider=%s endpoint=/api/call mode=phone dataset=%s customer_id=%s",
+        payload.provider,
+        payload.dataset_type,
+        payload.customer_id,
+    )
     if payload.provider == "agora":
         return await create_agora_session(record, dial_phone=True, dataset_type=payload.dataset_type, language=payload.language)
     return await create_livekit_session(
