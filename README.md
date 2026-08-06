@@ -50,6 +50,22 @@ npm install
 
 ## Run
 
+Quick start all processes in the background:
+
+```bash
+scripts/start.sh
+```
+
+Stop all processes:
+
+```bash
+scripts/stop.sh
+```
+
+Runtime logs are written under `.run/logs/`.
+
+Manual run commands are below if you prefer separate terminals.
+
 Run these in separate terminals.
 
 1. Backend API:
