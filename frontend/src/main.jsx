@@ -154,6 +154,7 @@ function App() {
   const selectedCustomer = customers.find((customer) => customer.customer_id === selectedCustomerId);
   const canStartCall = !isStarting && !isLoadingCustomers && Boolean(selectedCustomer);
   const isDebtList = datasetType === 'debt_collection';
+  const isListPage = datasetType === 'debt_collection' || datasetType === 'credit_card';
 
   useEffect(() => {
     document.title = session ? `Live call: ${session.customer.name}` : 'Credit Card Voice Agent';
@@ -201,7 +202,7 @@ function App() {
     setSelectedLanguage(nextCustomer?.preferred_language || 'English');
   }
 
-  async function openDebtCallModal(customer) {
+  async function openCallModal(customer) {
     const rowLanguage = selectedLanguage || customer.preferred_language || 'English';
     setError('');
     setSelectedCustomerId(customer.customer_id);
@@ -235,14 +236,14 @@ function App() {
     }
   }
 
-  function closeDebtCallModal() {
+  function closeCallModal() {
     if (!isStarting) {
       setPendingCall(null);
       setPromptDraft('');
     }
   }
 
-  async function confirmDebtCall(event) {
+  async function confirmCall(event) {
     if (!pendingCall) {
       return;
     }
