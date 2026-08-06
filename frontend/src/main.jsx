@@ -22,7 +22,7 @@ function customerCanDial(customer) {
 }
 
 function providerCallMode(provider) {
-  return provider === 'agora' ? 'browser' : 'phone';
+  return 'browser';
 }
 
 function AgentConnectionStatus() {
@@ -408,7 +408,6 @@ function App() {
                   {customers.map((customer) => {
                     const rowLanguage = selectedLanguage || customer.preferred_language || 'English';
                     const canDial = customerCanDial(customer);
-                    const canStartProviderCall = agentProvider === 'agora' || canDial;
                     return (
                       <tr key={customer.customer_id} className={customer.customer_id === selectedCustomerId ? 'selected-row' : ''}>
                         <td data-label="Customer">
@@ -424,7 +423,7 @@ function App() {
                         </td>
                         <td data-label="Actions">
                           <div className="row-actions">
-                            <button type="button" className="call-button" disabled={isStarting || !canStartProviderCall} onClick={() => openDebtCallModal(customer)}>
+                            <button type="button" className="call-button" disabled={isStarting} onClick={() => openDebtCallModal(customer)}>
                               Call customer
                             </button>
                           </div>
@@ -502,14 +501,10 @@ function App() {
               <p className="call-hint">Agora ConvoAI starts a browser audio session. Use LiveKit if you need a real phone dial-out.</p>
             )}
 
-            {agentProvider === 'livekit' && !customerCanDial(pendingCall.customer) && (
-              <p className="warning">This customer is restricted for phone dial-out. Choose Agora for a browser test session or select another customer.</p>
-            )}
-
             <div className="actions call-modal-actions">
               <button type="button" className="light-button" onClick={closeDebtCallModal}>Cancel</button>
-              <button type="button" className="call-button" disabled={isStarting || (agentProvider === 'livekit' && !customerCanDial(pendingCall.customer))} onClick={confirmDebtCall}>
-                {isStarting ? 'Starting...' : pendingCall.mode === 'phone' ? 'Call customer' : 'Start browser call'}
+              <button type="button" className="call-button" disabled={isStarting} onClick={confirmDebtCall}>
+                {isStarting ? 'Starting...' : 'Start call'}
               </button>
             </div>
           </section>
