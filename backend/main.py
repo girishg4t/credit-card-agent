@@ -1,13 +1,20 @@
 import json
 import os
+import time
+import urllib.error
+import urllib.request
 import uuid
 from typing import Any, Literal
 
+from agora_agent.agentkit.token import generate_convo_ai_token
+from agora_token_builder import RtcTokenBuilder
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from livekit import api
 from pydantic import BaseModel, Field
+
+from backend.agent import agent_instructions
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 load_dotenv(dotenv_path=os.path.join(REPO_ROOT, ".env"))
@@ -17,6 +24,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 AGENT_NAME = "credit-card-sales-agent"
 DatasetType = Literal["debt_collection", "credit_card"]
 VoiceMode = Literal["standard", "realtime"]
+AgentProvider = Literal["livekit", "agora"]
 DATASET_PATHS: dict[DatasetType, str] = {
     "debt_collection": os.getenv("DEBT_COLLECTION_DATA_PATH", os.getenv("CUSTOMER_DATA_PATH", "debt_collection_100_customers.json")),
     "credit_card": os.getenv("CREDIT_CARD_DATA_PATH", "customers.json"),
@@ -49,6 +57,7 @@ class SessionRequest(BaseModel):
     language: str | None = Field(default=None, max_length=80)
     dataset_type: DatasetType = "debt_collection"
     voice_mode: VoiceMode = "standard"
+    provider: AgentProvider = "livekit"
 
 
 class PhoneCallRequest(SessionRequest):
@@ -56,7 +65,8 @@ class PhoneCallRequest(SessionRequest):
 
 
 class SessionResponse(BaseModel):
-    livekit_url: str
+    provider: AgentProvider = "livekit"
+    livekit_url: str | None = None
     token: str
     room_name: str
     participant_name: str
@@ -64,6 +74,11 @@ class SessionResponse(BaseModel):
     language: str | None = None
     phone_call_started: bool = False
     voice_mode: VoiceMode = "standard"
+    agora_app_id: str | None = None
+    agora_channel: str | None = None
+    agora_uid: str | None = None
+    agora_agent_uid: str | None = None
+    agora_agent_id: str | None = None
 
 
 def require_env(name: str) -> str:
@@ -305,6 +320,7 @@ async def create_livekit_session(
         await lkapi.aclose()
 
     return SessionResponse(
+        provider="livekit",
         livekit_url=livekit_url,
         token=token,
         room_name=room_name,
@@ -313,6 +329,149 @@ async def create_livekit_session(
         language=selected_language,
         phone_call_started=dial_phone,
         voice_mode=voice_mode,
+    )
+
+
+def start_agora_agent_session(
+    *,
+    app_id: str,
+    app_certificate: str,
+    channel: str,
+    agent_uid: str,
+    user_uid: str,
+    instructions: str,
+    greeting_message: str,
+    name: str,
+) -> str:
+    token_ttl = int(os.getenv("AGORA_TOKEN_TTL_SECONDS", "3600"))
+    agent_token = generate_convo_ai_token(
+        app_id=app_id,
+        app_certificate=app_certificate,
+        channel_name=channel,
+        account=agent_uid,
+        token_expire=token_ttl,
+        privilege_expire=token_ttl,
+    )
+    body = {
+        "name": name,
+        "properties": {
+            "channel": channel,
+            "token": agent_token,
+            "agent_rtc_uid": agent_uid,
+            "remote_rtc_uids": [user_uid],
+            "enable_string_uid": True,
+            "idle_timeout": int(os.getenv("AGORA_AGENT_IDLE_TIMEOUT", "60")),
+            "mllm": {
+                "enable": True,
+                "url": os.getenv("OPENAI_REALTIME_URL", "wss://api.openai.com/v1/realtime"),
+                "api_key": require_env("OPENAI_API_KEY"),
+                "params": {
+                    "model": os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime"),
+                    "voice": os.getenv("OPENAI_REALTIME_VOICE", "alloy"),
+                    "instructions": instructions,
+                    "input_audio_transcription": {
+                        "model": os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"),
+                    },
+                },
+                "turn_detection": {
+                    "mode": "server_vad",
+                    "server_vad_config": {
+                        "prefix_padding_ms": 800,
+                        "silence_duration_ms": 640,
+                        "threshold": 0.5,
+                    },
+                },
+                "greeting_message": greeting_message,
+                "input_modalities": ["audio", "text"],
+                "output_modalities": ["text", "audio"],
+                "vendor": "openai",
+            },
+        },
+    }
+    data = json.dumps(body).encode("utf-8")
+    request = urllib.request.Request(
+        f"https://api.agora.io/api/conversational-ai-agent/v2/projects/{app_id}/join",
+        data=data,
+        method="POST",
+        headers={
+            "Authorization": f"agora token={agent_token}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Agora API returned {exc.code}: {detail}") from exc
+
+    return payload.get("agent_id") or payload.get("id") or name
+
+
+async def create_agora_session(
+    record: dict[str, Any],
+    *,
+    dial_phone: bool,
+    dataset_type: DatasetType,
+    language: str | None = None,
+) -> SessionResponse:
+    if dial_phone:
+        raise HTTPException(status_code=400, detail="Agora provider currently supports browser calls only. Choose LiveKit for phone dial-out.")
+
+    summary = summarize_customer(record, dataset_type)
+    selected_language = language or summary.preferred_language
+    app_id = require_env("APPID")
+    app_certificate = require_env("APP_CERTIFICATE")
+
+    channel_prefix = "agora-debt" if dataset_type == "debt_collection" else "agora-card"
+    channel = f"{channel_prefix}-{summary.customer_id.lower()}-{uuid.uuid4().hex[:8]}"
+    user_uid = f"user-{uuid.uuid4().hex[:8]}"
+    agent_uid = f"agent-{uuid.uuid4().hex[:8]}"
+    name = f"card-agent-{uuid.uuid4().hex[:8]}"
+
+    customer_context = customer_payload(record, selected_language, dataset_type)
+    instructions = agent_instructions(customer_context)
+    greeting_message = (
+        f"Hello {summary.name}, I am an AI assistant calling about "
+        f"{'your pre-approved credit card offer' if dataset_type == 'credit_card' else 'your credit card account'}. "
+        f"I will speak in {selected_language or 'English'}. Is now a good time to talk?"
+    )
+    expires_at = int(time.time()) + int(os.getenv("AGORA_TOKEN_TTL_SECONDS", "3600"))
+    token = RtcTokenBuilder.buildTokenWithAccount(app_id, app_certificate, channel, user_uid, 1, expires_at)
+
+    try:
+        import asyncio
+
+        agent_id = await asyncio.to_thread(
+            start_agora_agent_session,
+            app_id=app_id,
+            app_certificate=app_certificate,
+            channel=channel,
+            agent_uid=agent_uid,
+            user_uid=user_uid,
+            instructions=instructions,
+            greeting_message=greeting_message,
+            name=name,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not start Agora ConvoAI agent: {exc}") from exc
+
+    return SessionResponse(
+        provider="agora",
+        token=token,
+        room_name=channel,
+        participant_name=user_uid,
+        customer=summary,
+        language=selected_language,
+        phone_call_started=False,
+        voice_mode="realtime",
+        agora_app_id=app_id,
+        agora_channel=channel,
+        agora_uid=user_uid,
+        agora_agent_uid=agent_uid,
+        agora_agent_id=agent_id,
     )
 
 
@@ -340,6 +499,8 @@ def list_customers(dataset_type: DatasetType = "debt_collection") -> list[Custom
 @app.post("/api/session", response_model=SessionResponse)
 async def create_session(payload: SessionRequest) -> SessionResponse:
     record = find_customer_record(payload.customer_id, payload.dataset_type)
+    if payload.provider == "agora":
+        return await create_agora_session(record, dial_phone=False, dataset_type=payload.dataset_type, language=payload.language)
     return await create_livekit_session(
         record,
         dial_phone=False,
@@ -352,6 +513,8 @@ async def create_session(payload: SessionRequest) -> SessionResponse:
 @app.post("/api/call", response_model=SessionResponse)
 async def call_customer(payload: PhoneCallRequest) -> SessionResponse:
     record = find_customer_record(payload.customer_id, payload.dataset_type)
+    if payload.provider == "agora":
+        return await create_agora_session(record, dial_phone=True, dataset_type=payload.dataset_type, language=payload.language)
     return await create_livekit_session(
         record,
         dial_phone=True,

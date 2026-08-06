@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { LiveKitRoom, RoomAudioRenderer, ControlBar, useParticipants, useTranscriptions } from '@livekit/components-react';
+import AgoraRTC from 'agora-rtc-sdk-ng';
 import '@livekit/components-styles';
 import './styles.css';
 
@@ -11,9 +12,17 @@ const datasetOptions = [
   { value: 'debt_collection', label: 'Debt collection' },
   { value: 'credit_card', label: 'Credit card sales' },
 ];
+const providerOptions = [
+  { value: 'livekit', label: 'LiveKit' },
+  { value: 'agora', label: 'Agora ConvoAI' },
+];
 
 function customerCanDial(customer) {
   return Boolean(customer) && customer.allow_voice_calls && !customer.do_not_call && !customer.contact_restricted && Boolean(customer.phone);
+}
+
+function providerCallMode(provider) {
+  return provider === 'agora' ? 'browser' : 'phone';
 }
 
 function AgentConnectionStatus() {
@@ -59,14 +68,84 @@ function TranscriptPanel() {
   );
 }
 
+function AgoraCallRoom({ session }) {
+  const [status, setStatus] = useState('Connecting to Agora...');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+    let microphoneTrack;
+
+    async function join() {
+      try {
+        client.on('user-published', async (user, mediaType) => {
+          await client.subscribe(user, mediaType);
+          if (mediaType === 'audio') {
+            user.audioTrack?.play();
+            if (!cancelled) {
+              setStatus('Agent audio connected. You can start talking now.');
+            }
+          }
+        });
+
+        client.on('user-unpublished', (_user, mediaType) => {
+          if (mediaType === 'audio' && !cancelled) {
+            setStatus('Agent audio paused. Waiting for audio...');
+          }
+        });
+
+        await client.join(session.agora_app_id, session.agora_channel, session.token, session.agora_uid);
+        microphoneTrack = await AgoraRTC.createMicrophoneAudioTrack();
+        await client.publish([microphoneTrack]);
+        if (!cancelled) {
+          setStatus('Microphone connected. Waiting for agent audio...');
+        }
+      } catch (caught) {
+        if (!cancelled) {
+          setError(caught.message || 'Could not connect to Agora.');
+          setStatus('Agora connection failed.');
+        }
+      }
+    }
+
+    join();
+
+    return () => {
+      cancelled = true;
+      if (microphoneTrack) {
+        microphoneTrack.stop();
+        microphoneTrack.close();
+      }
+      client.leave().catch(() => {});
+    };
+  }, [session]);
+
+  return (
+    <section className="agora-room">
+      <div className={error ? 'agent-status loading' : 'agent-status ready'}>
+        <span className={error ? 'dot' : 'dot online'} />
+        <div>
+          <strong>{error ? 'Agora connection issue' : 'Agora ConvoAI session'}</strong>
+          <span>{status}</span>
+        </div>
+      </div>
+      <p className="call-hint">Allow microphone access. Agora ConvoAI joins this channel as the AI agent and responds over audio.</p>
+      {error && <p className="error">{error}</p>}
+    </section>
+  );
+}
+
 function App() {
   const [customers, setCustomers] = useState([]);
   const [datasetType, setDatasetType] = useState('debt_collection');
+  const [agentProvider, setAgentProvider] = useState('livekit');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [useRealtime, setUseRealtime] = useState(false);
   const [lastCallMode, setLastCallMode] = useState('browser');
   const [session, setSession] = useState(null);
+  const [pendingCall, setPendingCall] = useState(null);
   const [error, setError] = useState('');
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
@@ -112,12 +191,38 @@ function App() {
     setIsLoadingCustomers(true);
     setDatasetType(nextDatasetType);
     setSession(null);
+    setPendingCall(null);
   }
 
   function changeCustomer(customerId) {
     const nextCustomer = customers.find((customer) => customer.customer_id === customerId);
     setSelectedCustomerId(customerId);
     setSelectedLanguage(nextCustomer?.preferred_language || 'English');
+  }
+
+  function openDebtCallModal(customer) {
+    const rowLanguage = selectedLanguage || customer.preferred_language || 'English';
+    setError('');
+    setSelectedCustomerId(customer.customer_id);
+    setPendingCall({
+      customer,
+      language: rowLanguage,
+      mode: providerCallMode(agentProvider),
+    });
+  }
+
+  function closeDebtCallModal() {
+    if (!isStarting) {
+      setPendingCall(null);
+    }
+  }
+
+  async function confirmDebtCall(event) {
+    if (!pendingCall) {
+      return;
+    }
+    await startCall(pendingCall.mode, event, pendingCall.customer, pendingCall.language);
+    setPendingCall(null);
   }
 
   async function startCall(mode, event, customerOverride = selectedCustomer, languageOverride = selectedLanguage) {
@@ -145,12 +250,13 @@ function App() {
           language: languageOverride || customerOverride.preferred_language || 'English',
           dataset_type: datasetType,
           voice_mode: useRealtime ? 'realtime' : 'standard',
+          provider: agentProvider,
         }),
       });
 
       const body = await response.json();
       if (!response.ok) {
-        throw new Error(body.detail || 'Could not start the LiveKit session.');
+        throw new Error(body.detail || `Could not start the ${agentProvider === 'agora' ? 'Agora ConvoAI' : 'LiveKit'} session.`);
       }
 
       setSession(body);
@@ -166,28 +272,33 @@ function App() {
       <main className="page call-page">
         <section className="call-card">
           <div className="call-header">
-            <p className="eyebrow">Live {session.customer.dataset_type === 'credit_card' ? 'credit card sales' : 'collections'} conversation</p>
+            <p className="eyebrow">Live {session.provider === 'agora' ? 'Agora ConvoAI' : 'LiveKit'} {session.customer.dataset_type === 'credit_card' ? 'credit card sales' : 'collections'} conversation</p>
             <h1>{session.phone_call_started ? 'Calling' : 'Testing'} {session.customer.name}</h1>
             <p className="muted">Room: {session.room_name}</p>
             <p className="muted">Language: {session.language || selectedLanguage}</p>
             <p className="muted">Voice mode: {session.voice_mode === 'realtime' ? 'Realtime speech-to-speech' : 'ASR / LLM / TTS'}</p>
+            {session.provider === 'agora' && <p className="muted">Agent ID: {session.agora_agent_id || session.agora_agent_uid}</p>}
             {session.phone_call_started && <p className="muted">Dialed: {session.customer.phone}</p>}
           </div>
 
-          <LiveKitRoom
-            serverUrl={session.livekit_url}
-            token={session.token}
-            connect={true}
-            audio={true}
-            video={false}
-            onDisconnected={() => setSession(null)}
-          >
-            <RoomAudioRenderer />
-            <AgentConnectionStatus />
-            <TranscriptPanel />
-            <p className="call-hint">Allow microphone access. The agent will greet you when it is ready, then you can speak normally.</p>
-            <ControlBar variation="minimal" controls={{ camera: false, screenShare: false }} />
-          </LiveKitRoom>
+          {session.provider === 'agora' ? (
+            <AgoraCallRoom session={session} />
+          ) : (
+            <LiveKitRoom
+              serverUrl={session.livekit_url}
+              token={session.token}
+              connect={true}
+              audio={true}
+              video={false}
+              onDisconnected={() => setSession(null)}
+            >
+              <RoomAudioRenderer />
+              <AgentConnectionStatus />
+              <TranscriptPanel />
+              <p className="call-hint">Allow microphone access. The agent will greet you when it is ready, then you can speak normally.</p>
+              <ControlBar variation="minimal" controls={{ camera: false, screenShare: false }} />
+            </LiveKitRoom>
+          )}
 
           <div className="actions call-actions">
             <button className="secondary" onClick={() => setSession(null)}>End call</button>
@@ -207,7 +318,7 @@ function App() {
         <p className="eyebrow">AI voice agent</p>
         <h1>Credit card calls with customer context</h1>
         <p>
-          Select a call type and customer from the JSON datasets, test the agent in your browser, or dial the customer through LiveKit SIP.
+          Select a provider, call type, and customer from the JSON datasets, then test in your browser or dial through LiveKit SIP.
         </p>
       </section>
 
@@ -215,36 +326,49 @@ function App() {
         <div className="setup-header">
           <div>
             <p className="eyebrow">Call setup</p>
-            <h2>Select call type, customer, and language</h2>
+            <h2>Select provider, call type, customer, and language</h2>
           </div>
           <span className="count-pill">{isLoadingCustomers ? 'Loading...' : `${customers.length} customers`}</span>
         </div>
 
-        <label>
-          Call type
-          <select value={datasetType} onChange={(event) => changeDataset(event.target.value)}>
-            {datasetOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-        </label>
-
-        <div className="selector-grid">
+        <div className="selector-grid top-controls">
           <label>
-            Customer
-            <select
-              disabled={isLoadingCustomers || customers.length === 0 || isDebtList}
-              value={selectedCustomerId}
-              onChange={(event) => changeCustomer(event.target.value)}
-            >
-              {!selectedCustomerId && <option value="">Select a customer</option>}
-              {customers.map((customer) => (
-                <option key={customer.customer_id} value={customer.customer_id}>
-                  {customer.customer_id} - {customer.name} - {customer.recommended_card || customer.scenario}
-                </option>
+            Agent provider
+            <select value={agentProvider} onChange={(event) => setAgentProvider(event.target.value)}>
+              {providerOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
           </label>
+
+          <label>
+            Call type
+            <select value={datasetType} onChange={(event) => changeDataset(event.target.value)}>
+              {datasetOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className={isDebtList ? 'selector-grid top-controls debt-top-controls' : 'selector-grid'}>
+          {!isDebtList && (
+            <label>
+              Customer
+              <select
+                disabled={isLoadingCustomers || customers.length === 0}
+                value={selectedCustomerId}
+                onChange={(event) => changeCustomer(event.target.value)}
+              >
+                {!selectedCustomerId && <option value="">Select a customer</option>}
+                {customers.map((customer) => (
+                  <option key={customer.customer_id} value={customer.customer_id}>
+                    {customer.customer_id} - {customer.name} - {customer.recommended_card || customer.scenario}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label>
             Language
@@ -263,12 +387,13 @@ function App() {
         <div className="voice-mode-control">
           <div>
             <strong>Realtime speech-to-speech</strong>
-            <span>{useRealtime ? 'On — uses the OpenAI realtime voice model' : 'Off — uses separate ASR, LLM, and TTS models (default)'}</span>
+            <span>{agentProvider === 'agora' ? 'Agora ConvoAI uses realtime speech-to-speech' : useRealtime ? 'On — uses the OpenAI realtime voice model' : 'Off — uses separate ASR, LLM, and TTS models (default)'}</span>
           </div>
           <label className="switch">
             <input
               type="checkbox"
-              checked={useRealtime}
+              checked={agentProvider === 'agora' || useRealtime}
+              disabled={agentProvider === 'agora'}
               onChange={(event) => setUseRealtime(event.target.checked)}
               aria-label="Use realtime speech-to-speech mode"
             />
@@ -283,7 +408,7 @@ function App() {
                 <p className="eyebrow">Debt queue</p>
                 <h3>Customers ready for agent calls</h3>
               </div>
-              <span>{isLoadingCustomers ? 'Loading customers...' : `${customers.length} rows`}</span>
+              <span>{isLoadingCustomers ? 'Loading customers...' : `${customers.length} customers`}</span>
             </div>
 
             <div className="debt-table-wrap">
@@ -301,8 +426,9 @@ function App() {
                 </thead>
                 <tbody>
                   {customers.map((customer) => {
-                    const rowLanguage = customer.preferred_language || selectedLanguage || 'English';
+                    const rowLanguage = selectedLanguage || customer.preferred_language || 'English';
                     const canDial = customerCanDial(customer);
+                    const canStartProviderCall = agentProvider === 'agora' || canDial;
                     return (
                       <tr key={customer.customer_id} className={customer.customer_id === selectedCustomerId ? 'selected-row' : ''}>
                         <td data-label="Customer">
@@ -318,11 +444,8 @@ function App() {
                         </td>
                         <td data-label="Actions">
                           <div className="row-actions">
-                            <button type="button" disabled={isStarting} onClick={(event) => startCall('browser', event, customer, rowLanguage)}>
-                              Browser
-                            </button>
-                            <button type="button" className="call-button" disabled={isStarting || !canDial} onClick={(event) => startCall('phone', event, customer, rowLanguage)}>
-                              Phone
+                            <button type="button" className="call-button" disabled={isStarting || !canStartProviderCall} onClick={() => openDebtCallModal(customer)}>
+                              Call customer
                             </button>
                           </div>
                         </td>
@@ -335,7 +458,7 @@ function App() {
           </section>
         )}
 
-        {selectedCustomer && (
+        {!isDebtList && selectedCustomer && (
           <section className="customer-summary">
             <div><strong>Phone</strong><span>{selectedCustomer.phone || 'Missing'}</span></div>
             <div><strong>City</strong><span>{selectedCustomer.city || 'Unknown'}</span></div>
@@ -353,21 +476,65 @@ function App() {
           </section>
         )}
 
-        {selectedCustomer && (selectedCustomer.do_not_call || selectedCustomer.contact_restricted || !selectedCustomer.allow_voice_calls) && (
+        {!isDebtList && selectedCustomer && (selectedCustomer.do_not_call || selectedCustomer.contact_restricted || !selectedCustomer.allow_voice_calls) && (
           <p className="warning">This customer is restricted for voice calls. Phone dial-out will be blocked by the backend.</p>
         )}
 
         {error && <p className="error">{error}</p>}
 
-        <div className="actions">
-          <button type="button" disabled={!canStartCall} onClick={(event) => startCall('browser', event)}>
-            {isStarting ? 'Starting...' : 'Test in browser'}
-          </button>
-          <button type="button" className="call-button" disabled={!canStartCall} onClick={(event) => startCall('phone', event)}>
-            {isStarting ? 'Dialing...' : 'Make phone call'}
-          </button>
-        </div>
+        {!isDebtList && (
+          <div className="actions">
+            <button type="button" disabled={!canStartCall} onClick={(event) => startCall('browser', event)}>
+              {isStarting ? 'Starting...' : 'Test in browser'}
+            </button>
+            <button type="button" className="call-button" disabled={!canStartCall || agentProvider === 'agora'} onClick={(event) => startCall('phone', event)}>
+              {isStarting ? 'Dialing...' : 'Make phone call'}
+            </button>
+          </div>
+        )}
       </form>
+
+      {pendingCall && (
+        <div className="modal-backdrop" role="presentation" onClick={closeDebtCallModal}>
+          <section className="call-modal" role="dialog" aria-modal="true" aria-labelledby="call-modal-title" onClick={(event) => event.stopPropagation()}>
+            <div className="call-modal-header">
+              <div>
+                <p className="eyebrow">Confirm call</p>
+                <h2 id="call-modal-title">{pendingCall.customer.name}</h2>
+              </div>
+              <button type="button" className="icon-button" onClick={closeDebtCallModal} aria-label="Close call details">x</button>
+            </div>
+
+            <section className="customer-summary modal-summary">
+              <div><strong>Customer ID</strong><span>{pendingCall.customer.customer_id}</span></div>
+              <div><strong>Phone</strong><span>{pendingCall.customer.phone || 'Missing'}</span></div>
+              <div><strong>Provider</strong><span>{agentProvider === 'agora' ? 'Agora ConvoAI' : 'LiveKit'}</span></div>
+              <div><strong>Call mode</strong><span>{pendingCall.mode === 'phone' ? 'Phone call' : 'Browser conversation'}</span></div>
+              <div><strong>Language</strong><span>{pendingCall.language}</span></div>
+              <div><strong>Scenario</strong><span>{pendingCall.customer.scenario || '-'}</span></div>
+              <div><strong>Outstanding</strong><span>INR {pendingCall.customer.outstanding_amount ?? '-'}</span></div>
+              <div><strong>Minimum due</strong><span>INR {pendingCall.customer.minimum_due ?? '-'}</span></div>
+              <div><strong>DPD</strong><span>{pendingCall.customer.days_past_due ?? '-'}</span></div>
+              <div><strong>Status</strong><span>{customerCanDial(pendingCall.customer) ? 'Callable' : 'Restricted for phone dial-out'}</span></div>
+            </section>
+
+            {agentProvider === 'agora' && (
+              <p className="call-hint">Agora ConvoAI starts a browser audio session. Use LiveKit if you need a real phone dial-out.</p>
+            )}
+
+            {agentProvider === 'livekit' && !customerCanDial(pendingCall.customer) && (
+              <p className="warning">This customer is restricted for phone dial-out. Choose Agora for a browser test session or select another customer.</p>
+            )}
+
+            <div className="actions call-modal-actions">
+              <button type="button" className="light-button" onClick={closeDebtCallModal}>Cancel</button>
+              <button type="button" className="call-button" disabled={isStarting || (agentProvider === 'livekit' && !customerCanDial(pendingCall.customer))} onClick={confirmDebtCall}>
+                {isStarting ? 'Starting...' : pendingCall.mode === 'phone' ? 'Call customer' : 'Start browser call'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
