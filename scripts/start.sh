@@ -15,14 +15,50 @@ if [ ! -f "$ROOT_DIR/.env" ] && [ ! -f "$ROOT_DIR/backend/.env" ]; then
   exit 1
 fi
 
+env_has_value() {
+  local key="$1"
+  "$PYTHON_BIN" - "$ROOT_DIR/.env" "$ROOT_DIR/backend/.env" "$key" <<'PY'
+import sys
+from pathlib import Path
+
+for filename in sys.argv[1:3]:
+    path = Path(filename)
+    if not path.exists():
+        continue
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        if key.strip() == sys.argv[3] and value.strip().strip('"\''):
+            sys.exit(0)
+sys.exit(1)
+PY
+}
+
+missing_keys=()
+for key in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET OPENAI_API_KEY; do
+  if ! env_has_value "$key"; then
+    missing_keys+=("$key")
+  fi
+done
+
+if [ "${#missing_keys[@]}" -gt 0 ]; then
+  echo "Missing required environment values: ${missing_keys[*]}"
+  echo "Add them to .env or backend/.env, then run scripts/start.sh again."
+  exit 1
+fi
+
 ensure_python_env() {
   if [ ! -x "$ROOT_DIR/.venv/bin/python" ]; then
     "$PYTHON_BIN" -m venv "$ROOT_DIR/.venv"
   fi
 
-  if [ ! -f "$RUN_DIR/backend-deps-installed" ]; then
+  local requirements_hash
+  requirements_hash="$(cksum "$ROOT_DIR/backend/requirements.txt")"
+  if [ ! -f "$RUN_DIR/backend-deps-installed" ] || [ "$(cat "$RUN_DIR/backend-deps-installed")" != "$requirements_hash" ]; then
     "$ROOT_DIR/.venv/bin/python" -m pip install -r "$ROOT_DIR/backend/requirements.txt" >"$LOG_DIR/pip-install.log" 2>&1
-    touch "$RUN_DIR/backend-deps-installed"
+    printf '%s' "$requirements_hash" >"$RUN_DIR/backend-deps-installed"
   fi
 
   local cert_file

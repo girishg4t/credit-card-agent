@@ -208,6 +208,16 @@ button:disabled {
   font-weight: 800;
 }
 
+.call-hint {
+  margin: 0;
+  border-radius: 16px;
+  padding: 14px 16px;
+  color: #244166;
+  background: #eef6ff;
+  font-weight: 750;
+  line-height: 1.5;
+}
+
 .dot {
   width: 11px;
   height: 11px;

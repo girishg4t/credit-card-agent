@@ -108,6 +108,7 @@ function App() {
           >
             <RoomAudioRenderer />
             <ParticipantsBadge />
+            <p className="call-hint">Allow microphone access. The agent will greet you when it connects, then you can speak normally.</p>
             <ControlBar variation="minimal" controls={{ camera: false, screenShare: false }} />
           </LiveKitRoom>
 

@@ -45,7 +45,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
-            model="gpt-4o-realtime-preview",
+            model=os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime"),
             voice="alloy",
         )
     )
@@ -55,9 +55,14 @@ async def entrypoint(ctx: JobContext) -> None:
         agent=Agent(instructions=agent_instructions(customer)),
     )
 
+    participant = await ctx.wait_for_participant()
     customer_name = summary.get("name", "there")
     await session.generate_reply(
-        instructions=f"Start the call. Greet {customer_name}, disclose that you are an AI assistant calling about their credit card account, and ask if now is a good time."
+        instructions=(
+            f"The customer participant {participant.identity} just joined. Start speaking now. "
+            f"Greet {customer_name}, disclose that you are an AI assistant calling about their credit card account, "
+            "ask if now is a good time, then pause for their response."
+        )
     )
 
 
